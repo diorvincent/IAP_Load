@@ -1,0 +1,10 @@
+debug/main.o
+debug/csvexporter.o
+debug/databuffer.o
+debug/plotwidget.o
+debug/widget.o
+debug/qrc_name.o
+debug/qrc_src.o
+debug/moc_widget.o
+debug/moc_databuffer.o
+debug/moc_plotwidget.o

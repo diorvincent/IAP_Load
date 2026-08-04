@@ -1,0 +1,10 @@
+release/main.o
+release/csvexporter.o
+release/databuffer.o
+release/plotwidget.o
+release/widget.o
+release/qrc_name.o
+release/qrc_src.o
+release/moc_widget.o
+release/moc_databuffer.o
+release/moc_plotwidget.o
