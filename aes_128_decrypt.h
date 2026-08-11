@@ -1,10 +1,9 @@
 ﻿#ifndef AES_128_DECRYPT_H
 #define AES_128_DECRYPT_H
 
-#include <stdio.h>
+//gcc 7.4.0
+#include  <stdio.h>
 #include <string.h>
-#include "typedef.h"
-
 #define Nb	4 //加解密数据块大小，固定为4
 
 // GF(2^8) 多项式
@@ -15,14 +14,14 @@ SubstituteBytes()
 加密时：使用S盒，将待加密数据为S盒索引将加密数据替换为S盒的内容
 解密时：使用逆S盒，将已加密数据为逆S盒索引将已加密数据替换为逆S盒子的内容
 其实就是将数据按表替换，
-例如待加密数据BYTE data = 9;
+例如待加密数据unsigned char data = 9;
 加密数据:encryptData = SBox[data] = SBox[9] = 0x01;//注意索引从0开始
 解密数据:decryptData = InvSBox[encryptData] = InvSBox[0x01] = 9;
 SBox和InvSBox的关系是 data = InvSBox[SBox[data]];还跟GF(2^8) 多项式有关
 */
 
 // 加密用的S盒
-const BYTE SBox[256] =
+const unsigned char SBox[256] =
 {
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
     0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
@@ -43,7 +42,7 @@ const BYTE SBox[256] =
 };
 
 // 解密用的SBox
-const BYTE InvSBox[256] =
+const unsigned char InvSBox[256] =
 {
     0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb,
     0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb,
@@ -69,18 +68,15 @@ class aes_128_decrypt
 public:
   aes_128_decrypt();
 
+  void PrintData(const char *head, unsigned char *data, unsigned int len);
+
   void my_aes_init(void);
-  //加密
-  void my_aes_encrypt(BYTE* sou_data, BYTE* enc_data,BYTE len);
-  //解密
-  void my_aes_decrypt(BYTE* enc_data, BYTE* dec_data, BYTE len);
 
-  //在控制台打印加密/解密数据
-  void PrintData(const char *head, BYTE *data, UINT len);
+  unsigned int my_aes_encrypt(unsigned char* sou_data, unsigned char* enc_data, unsigned int len);
+  unsigned int my_aes_decrypt(unsigned char* enc_data, unsigned char* dec_data, unsigned int len);
 
-  //测试用例
-  void my_aes_test(void);
 
+  void getKey(unsigned char* pKey);
 private:
   //加密类型对应的密匙长度，单位bit
   typedef enum {
@@ -101,113 +97,169 @@ private:
       int type;//用户需填充，关联AESType_t
       int mode;//用户需填充，关联AESMode_t
       const void *key;//用户需填充，密匙
-      const void *pIV;//用户需填充，初始化向量, 当mode=AES_MODE_CBC时需要设置，指向BYTE IV[4*Nb];
+      const void *pIV;//用户需填充，初始化向量, 当mode=AES_MODE_CBC时需要设置，指向unsigned char IV[4*Nb];
       //AES拓展密匙, 空间大小 AES128:4*Nb*(10+1):4*Nb*(12+1)、AES256:4*Nb*(14+1)
-      BYTE expandKey[4*Nb*(14+1)];//用户不需要填充，[4*Nb*(Nr+1)]、这里按最大的AES256进行初始化
+      unsigned char expandKey[4*Nb*(14+1)];//用户不需要填充，[4*Nb*(Nr+1)]、这里按最大的AES256进行初始化
   } AESInfo_t;
 
   //秘钥，根据实际情况自己定义，AES128 用16字节、AES192 用24字节、AES256 用32字节
-  //BYTE aes_key[16] = {'c','s','g','i','-','*','+','/','p','j','x','m',4,1,0,3};
+  //unsigned char aes_key[16] = {0x43,0x44,0x45,0x46, 0x31,0x32,0x33,0x34, 0x39,0x30,0x41,0x42, 0x35,0x36,0x37,0x38};
+  //unsigned char aes_key[16] = {'c','s','g','i','-','*','+','/','p','j','x','m',4,1,0,3};
   //unsigned char aes_key[16] = {'a','s','d','f','+','-','*','/','h','j','k','m',5,6,7,8};
-  unsigned char aes_key[16] = {0x00, 0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88,0x99,0xAA,0xBB,0xCC,0xDD,0xEE,0xFF};
-  /*BYTE key[32] = {	0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x30,0x41,0x42,0x43,0x44,0x45,0x46,	0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x30,0x41,0x42,0x43,0x44,0x45,0x46};*/
+  unsigned char aes_key[16] = {0xF8, 0xDB, 0x30, 0x75, 0xEB, 0xAD, 0x7A, 0x42, 0x5C, 0x81, 0x41, 0xE8, 0x91, 0xDB, 0xE6, 0x35};
+
+  //unsigned char key[32] = {	0x31,0x32,0x33,0x34, 0x35,0x36,0x37,0x38, 0x39,0x30,0x41,0x42, 0x43,0x44,0x45,0x46,	0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x30,0x41,0x42,0x43,0x44,0x45,0x46};
+
 
   //初始化向量, 固定长度16个, 当mode=AES_MODE_CBC时用到
-  // BYTE IV[4*Nb] = {0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x30,0x41,0x42,0x43,0x44,0x45,0x46};
-  //BYTE aes_IV[16] = {'q','w','e','r','t','y','u','i','o','p','g','b',51,53,55,59};
-  unsigned char aes_IV[16] = {0x10,0x20,0x30,0x40,0x50,0x60,0x70,0x80,0x90,0xA0,0xB0,0xC0,0xD0,0xE0,0xF0,0x00};
+  unsigned char IV[4*Nb] = {0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x30,0x41,0x42,0x43,0x44,0x45,0x46};
+  //unsigned char aes_IV[16] = {'q','w','e','r','t','y','u','i','o','p','g','b',51,53,55,59};
+  unsigned char aes_IV[16] = {0xF6, 0x5A, 0xD1, 0x66, 0x2B, 0xCD, 0x6A, 0xAD, 0x95, 0x1A, 0xED, 0xE1, 0xC3, 0xF7, 0x22, 0x16};
   //设置加密方式、密匙
   AESInfo_t aesInfo;
 
-
+  //测试例1
+  void my_aes_test(void);
 
 private:
+  /*****************************************************************************
+  *	函数名：	RShiftWord
+  *	功能描述：	对一个pWord 4字节数据进行循环右移。
+  *	输入参数：	pWord -- 要右移的4字节数据。
+  *	输出参数：	pWord -- 右移后的4字节数据。
+  *	返回值：      无。
+  *****************************************************************************/
+  void RShiftWord(unsigned char *pWord);
+  /*****************************************************************************
+  *	函数名：	XorBytes
+  *	功能描述：	异或两组数据。
+  *	输入参数：	pData1 -- 要异或的第一组数据。
+  *			   pData2 -- 要异或的第二组数据。
+  *			   nCount -- 参与异或的数据长度。
+  *	输出参数：	pData1 -- 异或后的结果。
+  *	返回值：    无。
+  *****************************************************************************/
+  void XorBytes(unsigned char *pData1, const unsigned char *pData2, unsigned char nCount);
+  /*****************************************************************************
+  *	函数名：	AddKey
+  *	功能描述：	把 pData数据 加上（异或）pKey密钥，数据长度为16字节。
+  *	输入参数：	pData	  -- 数据。
+  *			   pKey      -- 密钥。
+  *	输出参数：	pStpDataate	  -- 加上子密钥后的数据。
+  *	返回值：	无。
+  *****************************************************************************/
+  void AddKey(unsigned char *pData, const unsigned char *pKey);
+  /*****************************************************************************
+  *	函数名：	SubstituteBytes
+  *	功能描述：	通过S盒子置换数据。
+  *	输入参数：	pData  	-- 数据。
+  *			   dataCnt -- 数据长度。
+  *			   pBox	   -- 置换盒子，加密时使用SBox, 解密时使用InvSBox
+  *	输出参数：	pData	-- 置换后的状态数据。
+  *	返回值：	无。
+  *****************************************************************************/
+  void SubstituteBytes(unsigned char *pData, unsigned char dataCnt, const unsigned char *pBox);
+  /*****************************************************************************
+  *	函数名：	ShiftRows
+  *	功能描述：	把状态数据移行。
+  *	输入参数：	pState	-- 状态数据。
+  *			   bInvert	-- 是否反向移行（解密时使用）。
+  *	输出参数：	pState	-- 移行后的状态数据。
+  *	返回值：	无。
+  *****************************************************************************/
+  void ShiftRows(unsigned char *pState, unsigned char bInvert);
+  /*****************************************************************************
+  *	函数名：	GfMultBy02
+  *	功能描述：	在GF(28)域的 乘2 运算。
+  *	输入参数：	num	-- 乘数。
+  *	输出参数：	无。
+  *	返回值：	num乘以2的结果。
+  *****************************************************************************/
+  unsigned char GfMultBy02(unsigned char num);
+  unsigned char GfMultBy03(unsigned char num);
+  unsigned char GfMultBy09(unsigned char num);
+  unsigned char GfMultBy0B(unsigned char num);
+  unsigned char GfMultBy0D(unsigned char num);
+  unsigned char GfMultBy0E(unsigned char num);
+  /*****************************************************************************
+  *	函数名：	MixColumns
+  *	功能描述：	混合各列数据。
+  *	输入参数：	pData	 -- 数据。
+  *			   bInvert	-- 是否反向混合（解密时使用）。
+  *	输出参数：	pData	 -- 混合列后的状态数据。
+  *	返回值：	无。
+  *****************************************************************************/
+  void MixColumns(unsigned char *pData, unsigned char bInvert);
+  /*****************************************************************************
+  *	函数名：	BlockEncrypt
+  *	功能描述：	对单块数据加密。
+  *	输入参数：	pData -- 要加密的块数据。
+  *	输出参数：	pData -- 加密后的块数据。
+  *	返回值：	无。
+  *****************************************************************************/
+  void BlockEncrypt(AESInfo_t *aesInfoP, unsigned char *pData);
+  /*****************************************************************************
+  *	函数名：	BlockDecrypt
+  *	功能描述：	对单块数据解密。
+  *	输入参数：	pData -- 要解密的数据。
+  *	输出参数：	pData -- 解密后的数据。
+  *	返回值：	无。
+  *****************************************************************************/
+  void BlockDecrypt(AESInfo_t *aesInfoP, unsigned char *pData);
+  /*****************************************************************************
+  *	函数名：	AESAddPKCS7Padding
+  *	描述：		PKCS7 方式填充数据
+  *	输入参数：	data -- 后面最多预留16个字节空间用于存放填充值
+  *			   len --  数据的长度
+  *	输出参数：	data  -- 添加填充码后的数据
+  *	返回值：	填充后的长度
+  *****************************************************************************/
+  unsigned int AESAddPKCS7Padding(unsigned char *data, unsigned int len);
+  /*****************************************************************************
+  *	函数名：	AESDelPKCS7Padding
+  *	描述：		PKCS7Padding 填充密文解密后剔除填充值
+  *	输入参数：	pData -- 解密后的数据
+  *			   len --  数据的长度
+  *	输出参数：	pData  -- 删除填充码后的数据
+  *	返回值：	删除后的实际有效数据长度，为0表示传入的数据异常
+  *****************************************************************************/
+  unsigned int AESDelPKCS7Padding(unsigned char *pData, unsigned int len);
 
-  //对一个pWord 4字节数据进行循环右移。
-  //pWord::右移的字符串
-  void RShiftWord(BYTE *pWord);
-
-  //pData1:: 要异或的第一组数据。
-  //pData2:: 要异或的第二组数据。
-  //nCount:: 参与异或的数据长度。
-  void XorBytes(BYTE *pData1, const BYTE *pData2, BYTE nCount);
-
-  //把 pData数据 加上（异或）pKey密钥，数据长度为16字节。
-  //pData:: 数据。
-  //pKey:: 密钥。
-  void AddKey(BYTE *pData, const BYTE *pKey);
-
-
-  //通过S盒子置换数据。
-  //pData:: 数据。
-  //dataCnt:: 数据长度。
-  //pBox:: 置换盒子，加密时使用SBox, 解密时使用InvSBox
-  void SubstituteBytes(BYTE *pData, BYTE dataCnt, const BYTE *pBox);
-
-  //把状态数据移行。
-  //pState:: 状态数据。
-  //bInvert:: 是否反向移行（解密时使用）。
-  void ShiftRows(BYTE *pState, BYTE bInvert);
-
-
-  //在GF(28)域的 乘2 运算。
-  //num:: 乘数。
-  BYTE GfMultBy02(BYTE num);
-
-
-  //混合各列数据。
-  //pData:: 数据。
-  //bInvert:: 是否反向混合（解密时使用）。
-  void MixColumns(BYTE *pData, BYTE bInvert);
-
-
-  //对单块数据加密。
-  //pData -- 要加密的块数据。
-  //pData -- 加密后的块数据。
-  void BlockEncrypt(AESInfo_t *aesInfoP, BYTE *pData);
-
-
-  //对单块数据解密。
-  //pData:: 要解密的数据。
-  //pData:: 解密后的数据。
-  void BlockDecrypt(AESInfo_t *aesInfoP, BYTE *pData);
-
-
-  //PKCS7 方式填充数据
-  //data:: 后面最多预留16个字节空间用于存放填充值
-  //len::  数据的长度
-  UINT AESAddPKCS7Padding(BYTE *data, UINT len);
-
-
-  //PKCS7Padding 填充密文解密后剔除填充值
-  //pData:: 解密后的数据
-  //len::  数据的长度
-  //返回值： 删除后的实际有效数据长度，为0表示传入的数据异常
-  UINT AESDelPKCS7Padding(BYTE *pData, UINT len);
-
-
-  //初始化
-  //aesInfoP:: 用户需要填充
+  /*****************************************************************************
+  *	函数名：	AESInit
+  *	功能描述：	初始化
+  *	输入参数：	aesInfoP -- 用户需要填充
+  *	输出参数：	无。
+  *	返回值：	无。
+  *****************************************************************************/
   void AESInit(AESInfo_t *aesInfoP);
-
-  //加密数据
-  //aesInfoP:: 包含key、加密方式等初始化信息
-  //pPlainText:: 要加密的明文数据，其长度为dataLen字节。
-  //dataLen:: 明文数据长度，以字节为单位
-  //返回值：	解密后的数据长度。
-  UINT AESEncrypt(AESInfo_t *aesInfoP, const BYTE *pPlainText, BYTE *pCipherText, UINT dataLen);
-
-
-  //aesInfoP:: 包含key、加密方式等初始化信息
-  //pPlainText:: 解密出来的明文
-  //pCipherText:: 要解密的密文
-  //dataLen:: 密文数据长度，以字节为单位，必须是整倍数，AES128:16倍数、AES192:24倍数、AES256:32倍数。
-  //返回值：返回解密后的数据长度。
-  UINT AESDecrypt(AESInfo_t *aesInfoP, BYTE *pPlainText, const BYTE *pCipherText, UINT dataLen);
-
-
-  //判断字符是否可打印
-  //c:: 需要打印的字符
+  /*****************************************************************************
+  *	函数名：	AESEncrypt
+  *	功能描述：加密数据
+  *	输入参数：aesInfoP    -- 包含key、加密方式等初始化信息
+  *              pPlainText   -- 要加密的明文数据，其长度为dataLen字节。
+  *			    dataLen	   -- 明文数据长度，以字节为单位
+  *	输出参数：	pCipherText	-- 加密后的数据
+  *	返回值：	解密后的数据长度。
+  *****************************************************************************/
+  unsigned int AESEncrypt(AESInfo_t *aesInfoP, const unsigned char *pPlainText, unsigned char *pCipherText, unsigned int dataLen);
+  /*****************************************************************************
+  *	函数名：	AESDecrypt
+  *	功能描述：	解密数据
+  *	输入参数：	aesInfoP    -- 包含key、加密方式等初始化信息
+  *	            pCipherText	-- 要解密的密文
+  *			    dataLen	   -- 密文数据长度，以字节为单位，必须是整倍数，AES128:16倍数、AES192:24倍数、AES256:32倍数。
+  *  输出参数：  pPlainText  -- 解密出来的明文
+  *	返回值：	返回解密后的数据长度。
+  *****************************************************************************/
+  unsigned int AESDecrypt(AESInfo_t *aesInfoP, unsigned char *pPlainText, const unsigned char *pCipherText, unsigned int dataLen);
+  /*****************************************************************************
+   * 函数名：	isprint
+   * 功能描述：判断字符是否可打印
+   * 输入参数: c -- 需要打印的字符
+   * 输出参数：	无。
+   * 返回值：	无。
+  *****************************************************************************/
   bool isprint(char c);
 
 };

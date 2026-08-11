@@ -2,30 +2,33 @@
 <ui version="4.0">
  <class>Widget</class>
  <widget class="QWidget" name="Widget">
+  <property name="windowModality">
+   <enum>Qt::ApplicationModal</enum>
+  </property>
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1193</width>
-    <height>1026</height>
+    <width>1200</width>
+    <height>1080</height>
    </rect>
   </property>
   <property name="sizePolicy">
-   <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+   <sizepolicy hsizetype="Maximum" vsizetype="Maximum">
     <horstretch>0</horstretch>
     <verstretch>0</verstretch>
    </sizepolicy>
   </property>
   <property name="minimumSize">
    <size>
-    <width>0</width>
-    <height>0</height>
+    <width>1200</width>
+    <height>1080</height>
    </size>
   </property>
   <property name="maximumSize">
    <size>
-    <width>10000000</width>
-    <height>10000000</height>
+    <width>1200</width>
+    <height>1080</height>
    </size>
   </property>
   <property name="font">
@@ -3048,8 +3051,8 @@ QProgressBar::chunk{
         <rect>
          <x>10</x>
          <y>540</y>
-         <width>371</width>
-         <height>131</height>
+         <width>381</width>
+         <height>81</height>
         </rect>
        </property>
        <property name="title">
@@ -3058,21 +3061,21 @@ QProgressBar::chunk{
        <widget class="QLabel" name="label_15">
         <property name="geometry">
          <rect>
-          <x>10</x>
+          <x>70</x>
           <y>30</y>
-          <width>81</width>
+          <width>71</width>
           <height>31</height>
          </rect>
         </property>
         <property name="text">
-         <string>报警内容：</string>
+         <string>报警内容</string>
         </property>
        </widget>
        <widget class="QLabel" name="alarmLed">
         <property name="geometry">
          <rect>
           <x>20</x>
-          <y>80</y>
+          <y>30</y>
           <width>41</width>
           <height>21</height>
          </rect>
@@ -3084,9 +3087,9 @@ QProgressBar::chunk{
        <widget class="QLineEdit" name="alarmInfoEdit">
         <property name="geometry">
          <rect>
-          <x>230</x>
-          <y>80</y>
-          <width>131</width>
+          <x>140</x>
+          <y>30</y>
+          <width>121</width>
           <height>31</height>
          </rect>
         </property>
@@ -3094,27 +3097,14 @@ QProgressBar::chunk{
        <widget class="QPushButton" name="clearALMBtn">
         <property name="geometry">
          <rect>
-          <x>80</x>
-          <y>80</y>
-          <width>141</width>
+          <x>270</x>
+          <y>30</y>
+          <width>100</width>
           <height>31</height>
          </rect>
         </property>
         <property name="text">
          <string>清除报警</string>
-        </property>
-       </widget>
-       <widget class="QLabel" name="statusLabel_2">
-        <property name="geometry">
-         <rect>
-          <x>90</x>
-          <y>30</y>
-          <width>211</width>
-          <height>31</height>
-         </rect>
-        </property>
-        <property name="text">
-         <string/>
         </property>
        </widget>
       </widget>
@@ -3476,7 +3466,7 @@ QProgressBar::chunk{
         </rect>
        </property>
        <property name="currentIndex">
-        <number>4</number>
+        <number>0</number>
        </property>
        <widget class="QWidget" name="pagePosition">
         <attribute name="title">
@@ -4388,7 +4378,7 @@ QProgressBar::chunk{
         <rect>
          <x>10</x>
          <y>460</y>
-         <width>290</width>
+         <width>381</width>
          <height>60</height>
         </rect>
        </property>
@@ -4475,6 +4465,19 @@ QProgressBar::chunk{
        </property>
        <property name="checked">
         <bool>true</bool>
+       </property>
+      </widget>
+      <widget class="QLabel" name="statusLabel_2">
+       <property name="geometry">
+        <rect>
+         <x>270</x>
+         <y>20</y>
+         <width>291</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string/>
        </property>
       </widget>
      </widget>
@@ -4594,8 +4597,8 @@ QProgressBar::chunk{
       <widget class="QGroupBox" name="groupBox_5">
        <property name="geometry">
         <rect>
-         <x>770</x>
-         <y>790</y>
+         <x>10</x>
+         <y>730</y>
          <width>191</width>
          <height>51</height>
         </rect>
@@ -4649,7 +4652,7 @@ QProgressBar::chunk{
         </rect>
        </property>
        <property name="text">
-        <string>保存曲綫</string>
+        <string>保存曲线</string>
        </property>
       </widget>
       <widget class="QPushButton" name="pbCurveMode">

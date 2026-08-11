@@ -28,10 +28,6 @@ Widget::Widget(QWidget *parent) :
     currentPos(0.0),
     currentSpeed(0.0),
     currentTorque(0.0),
-    currentAlarm(0),
-    m_nCurveDrawFrq(100),
-    m_nTryReadT(0),
-    m_uBinSize(0),
     alarmBlinkTimer(new QTimer(this)),
     isAlarmLedOn(true),  // 初始默认“亮”（报警时才会触发闪烁）
   // 初始化标定模式为未打开
@@ -54,8 +50,13 @@ Widget::Widget(QWidget *parent) :
     qDebug() << "程序启动：初始化QApplication成功";
     ui->setupUi(this);
 
- //+20260709
-    m_plotwidget = new PlotWidget(this);
+ //+20260709.
+  currentAlarm =0;
+  m_uBinSize = 0;
+  m_nCurveDrawFrq = 100;
+  m_nTryReadT = 0;
+  m_decryptFile=nullptr;
+  m_plotwidget = new PlotWidget(this);
 #ifdef QT_NO_DEBUG
 
     //自定义绘制曲线
@@ -65,10 +66,15 @@ Widget::Widget(QWidget *parent) :
 #ifdef QT_DEBUG
      m_plotwidget->setVisible(false);
     //使用qcustomplot绘制曲线
+    m_ProxyPlot = new proxyPlot(ui->CurveVLayout);
+
+    /*
     m_customPlot = new QCustomPlot(this);
     m_customPlot->setObjectName(QString::fromUtf8("customPlot"));
     ui->CurveVLayout->addWidget(m_customPlot);
     initQCP();
+    */
+
 #endif
 
     getMotorCurve(); //20260710
@@ -204,7 +210,7 @@ Widget::Widget(QWidget *parent) :
               this, &Widget::onModeTabChanged);
    }
 
-   canReceiveTimer->blockSignals(true);
+   //canReceiveTimer->blockSignals(true);
    // 定时更新电机状态
     //QTimer* statusTimer = new QTimer(this);
     //connect(statusTimer, &QTimer::timeout, this, &Widget::updateMotorStatus);
@@ -242,10 +248,12 @@ Widget::~Widget()
     if (OpenStatus) {
         serial->close();
     }
-    if (firmwareFile && firmwareFile->isOpen()) {
-        firmwareFile->close();
-        delete firmwareFile;
-    }
+
+    removeDecryptBinFile();
+    //if (firmwareFile && firmwareFile->isOpen()) {
+    //    firmwareFile->close();
+    //    delete firmwareFile;
+    //}
 
     if (commTabWidget) {
         delete commTabWidget;
@@ -254,12 +262,11 @@ Widget::~Widget()
     delete m_plotwidget;
 
 #ifdef QT_DEBUG
-    ////delete m_tracer;
-    ////delete m_tracerLabel;
-    ///
-    for(int i = 0; i< 5; i++)
-        m_customPlot->removeGraph(i);
-    delete m_customPlot;
+    delete m_ProxyPlot;
+
+    //for(int i = 0; i< 5; i++)
+    //    m_customPlot->removeGraph(i);
+    //delete m_customPlot;
 #endif
     delete intValidator;
     delete canIdValidator;
@@ -270,220 +277,9 @@ Widget::~Widget()
     delete ui;
 }
 
-#ifdef QT_DEBUG
-/* QCP绘图初始化 */
-void Widget::initQCP()
-{
-    m_customPlot->setObjectName(QString::fromUtf8("customPlot"));                 // 设置QCustomPlot对象的对象名称
-    QSizePolicy sizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);     // 创建一个QSizePolicy对象，用于控制customPlot的尺寸策略
-    sizePolicy.setHorizontalStretch(0);         // 设置水平拉伸因子，0表示不拉伸
-    sizePolicy.setVerticalStretch(0);           // 设置垂直拉伸因子，0表示不拉伸
-    sizePolicy.setHeightForWidth(m_customPlot->sizePolicy().hasHeightForWidth()); // 设置高度与宽度的比例
-    m_customPlot->setSizePolicy(sizePolicy);      // 应用sizePolicy到customPlot，影响customPlot在布局中调整大小的方式
-    // 刻度显示
-    m_customPlot->xAxis->setTicks(true);
-    m_customPlot->yAxis->setTicks(true);
-    // 刻度值显示
-    m_customPlot->xAxis->setTickLabels(true);
-    m_customPlot->yAxis->setTickLabels(true);
-    // 网格显示
-    m_customPlot->xAxis->grid()->setVisible(true);
-    m_customPlot->yAxis->grid()->setVisible(true);
-    // 子网格显示
-    m_customPlot->xAxis->grid()->setSubGridVisible(false);
-    m_customPlot->yAxis->grid()->setSubGridVisible(false);
-    // 右侧和顶部坐标轴、刻度值显示
-    m_customPlot->xAxis2->setVisible(true);
-    m_customPlot->yAxis2->setVisible(true);
-    m_customPlot->yAxis2->setTicks(true);         // 设置customPlot的第二个Y轴显示刻度线
-    m_customPlot->yAxis2->setTickLabels(true);    // 设置customPlot的第二个Y轴显示刻度标签
-    connect(m_customPlot->xAxis, SIGNAL(rangeChanged(QCPRange)), m_customPlot->xAxis2, SLOT(setRange(QCPRange)));   //同步修改轴的范围
-    connect(m_customPlot->yAxis, SIGNAL(rangeChanged(QCPRange)), m_customPlot->yAxis2, SLOT(setRange(QCPRange)));
-    // 暗色主题
-    setPlotTheme(Qt::white, Qt::black);
-    // 亮色主题
-    //setPlotTheme(Qt::black, Qt::white);
-    // 可放大缩小和移动
-    QCPAxisRect qcpAxis(m_customPlot);
-    qcpAxis.setRangeZoom(Qt::Orientation::Horizontal);
-    m_customPlot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectAxes);
-
-    // x轴以时间形式显示
-    QSharedPointer<QCPAxisTickerTime> timeTicker(new QCPAxisTickerTime);
-    timeTicker->setTimeFormat("%m:%s:%z");      // 设置时间格式为分钟:秒:毫秒
-    m_customPlot->xAxis->setTicker(timeTicker);   // 将自定义的时间刻度标签设置器应用到customPlot的x轴上
-    m_customPlot->axisRect()->setupFullAxesBox(); // 设置轴矩形以显示所有轴的完整轴框
-     // 为坐标轴添加标签
-    m_customPlot->xAxis->setLabel("x");
-    m_customPlot->yAxis->setLabel("y");
-    // 默认坐标范围
-    m_customPlot->yAxis->setRange(-250, 250);
-    m_customPlot->replot();                       // 重新绘制customPlot，以应用新的设置
-
-    //添加电机参数曲线
-    initGraphName(CURRENTPOS, 0, Qt::red);
-    initGraphName(RPMS, 1, Qt::magenta);
-    initGraphName(PHASECURRENT, 2, Qt::green, true);
-    initGraphName(MOTORTEMP, 3, Qt::yellow);
-    initGraphName(MOSTEMP, 4, Qt::blue);
-
-    //游标显示曲线上的坐标
-
-}
-
-/* 设置绘图主题 */
-void Widget::setPlotTheme(QColor axis, QColor background)
-{
-    // 坐标标注颜色
-    m_customPlot->xAxis->setLabelColor(axis);
-    m_customPlot->yAxis->setLabelColor(axis);
-    // 坐标刻度值颜色
-    m_customPlot->xAxis->setTickLabelColor(axis);
-    m_customPlot->yAxis->setTickLabelColor(axis);
-    // 坐标基线颜色和宽度
-    m_customPlot->xAxis->setBasePen(QPen(axis, 1));
-    m_customPlot->yAxis->setBasePen(QPen(axis, 1));
-    // 坐标主刻度颜色和宽度
-    m_customPlot->xAxis->setTickPen(QPen(axis, 1));
-    m_customPlot->yAxis->setTickPen(QPen(axis, 1));
-    // 坐标子刻度颜色和宽度
-    m_customPlot->xAxis->setSubTickPen(QPen(axis, 1));
-    m_customPlot->yAxis->setSubTickPen(QPen(axis, 1));
-    // 坐标标注颜色
-    m_customPlot->xAxis2->setLabelColor(axis);
-    m_customPlot->yAxis2->setLabelColor(axis);
-    // 坐标刻度值颜色
-    m_customPlot->xAxis2->setTickLabelColor(axis);
-    m_customPlot->yAxis2->setTickLabelColor(axis);
-    // 坐标基线颜色和宽度
-    m_customPlot->xAxis2->setBasePen(QPen(axis, 1));
-    m_customPlot->yAxis2->setBasePen(QPen(axis, 1));
-    // 坐标主刻度颜色和宽度
-    m_customPlot->xAxis2->setTickPen(QPen(axis, 1));
-    m_customPlot->yAxis2->setTickPen(QPen(axis, 1));
-    // 坐标子刻度颜色和宽度
-    m_customPlot->xAxis2->setSubTickPen(QPen(axis, 1));
-    m_customPlot->yAxis2->setSubTickPen(QPen(axis, 1));
-    // 整个画布背景色
-    m_customPlot->setBackground(background);
-    // 绘图区域背景色
-    m_customPlot->axisRect()->setBackground(background);
-    // 刷新绘图
-    m_customPlot->replot();
-}
-
-/* 绘图 */
-void Widget::Plotting(QString name, double value)
-{
-    static QTime timeStart = QTime::currentTime();
-    double key = timeStart.msecsTo(QTime::currentTime()) / m_nCurveDrawFrq;
-    // 子网格显示
-    //m_customPlot->xAxis->grid()->setSubGridVisible(true);
-    //m_customPlot->yAxis->grid()->setSubGridVisible(true);
-
-    // 自适应量程:根据数据的大小自动改变绘图坐标量程，使曲线的纵坐标全部显示在绘图区域；
-    //m_customPlot->rescaleAxes();        //打开注释将开启自适应量程功能
-    // 设置时间轴
-    //使键轴的范围与数据滚动在恒定的范围(大小为timeAxis):
-    int timeAxis = 10;
-    if(key<=timeAxis)
-    {
-        m_customPlot->xAxis->setRange(timeAxis, timeAxis, Qt::AlignRight);    //数据从右往左,Qt::AlignRight设置 x 轴标签的对齐方式为右对齐
-    }
-    else
-    {
-        m_customPlot->xAxis->setRange(key, timeAxis, Qt::AlignRight);         //数据从右往左
-    }
-    // x轴和y轴全程显示:将曲线的横坐标和纵坐标全部显示在绘图区域；
-    //m_customPlot->rescaleAxes();    //打开注释将开启全程显示功能
-    // 更新曲线绘图
-    m_customPlot->graph(m_nameToGraphMap[name])->addData(key, value);
-    qDebug() << "Y:"<<value<< "X:"<<key;
-    // 使用rpQueuedReplot参数可以加快绘图速度，避免不必要的重复绘制
-    m_customPlot->replot(QCustomPlot::rpQueuedReplot);
-
-    //游标显示曲线上的坐标
-    /*
-    //生成游标
-    m_tracer = new QCPItemTracer(m_customPlot);   //生成游标
-    m_tracer->setPen(QPen(Qt::red));              //圆圈轮廓颜色
-    m_tracer->setBrush(QBrush(Qt::red));          //圆圈圈内颜色
-    m_tracer->setStyle(QCPItemTracer::tsCircle);  //圆圈
-    m_tracer->setSize(5);                         //设置大小
-
-    //游标说明
-    m_tracerLabel = new QCPItemText(m_customPlot);  //生成游标说明
-    m_tracerLabel->setLayer("overlay");           //设置图层为overlay，因为需要频繁刷新
-    m_tracerLabel->setPen(QPen(Qt::black));       //设置游标说明颜色
-    m_tracerLabel->setPositionAlignment(Qt::AlignLeft | Qt::AlignTop);    //左上
-    m_tracerLabel->position->setParentAnchor(m_tracer->position);           //将游标说明锚固在tracer位置处，实现自动跟随
-
-    //信号-槽连接语句
-    connect(m_customPlot, SIGNAL(mouseMove(QMouseEvent*)), this, SLOT(mouseMoveData(QMouseEvent*)));
-
-    */
-
-
-    // 计算和显示帧率（FPS），以及更新数据标签
-/*
-    // static double lastFpsKey = key;
-    // static int frameCount = 0;
-    // frameCount++;
-    // // 每2秒显示一次帧率
-    // if (key-lastFpsKey > 0.5)
-    // {
-    //     uint64_t sum = 0;
-    //     for (int i = 0; i < m_customPlot->plottableCount(); i++)
-    //     {
-    //         sum += uint64_t(m_customPlot->graph(i)->data()->size());
-    //     }
-    //     ui->statusLabel->setText(QString("%1 FPS, Total Data points: %2").arg(frameCount/(key-lastFpsKey), 0, 'f', 0).arg(sum));
-    //     lastFpsKey = key;
-    //     frameCount = 0;
-    //     // 更新数据标签
-    //     for (int t = 0; t < m_customPlot->plottableCount(); t++)
-    //     {
-    //         valueLabelVector[t]->setText(QString::number(valueVector[t]));
-    //     }
-    // }
-
-*/
-
-}
-
-/* 初始化曲线名称与颜色 */
-void Widget::initGraphName(QString name, int index, QColor color, bool bVisable)
-{
-    // 添加曲线
-    m_customPlot->addGraph();
-    m_customPlot->graph(m_customPlot->graphCount()-1)->setPen(QPen(color));
-    if(bVisable)
-        m_customPlot->graph(m_customPlot->graphCount()-1)->setVisible(true);
-    else
-        m_customPlot->graph(m_customPlot->graphCount()-1)->setVisible(false);
-    // 将曲线名称与曲线序号一一对应，之后添加数据就可以一一对应
-    m_nameToGraphMap[name] = index;
-}
-
-void Widget::mouseMoveData(QMouseEvent *loc)
-{
-    //获得鼠标位置处对应的横坐标数据x
-    double x = m_customPlot->xAxis->pixelToCoord(loc->pos().x());
-    double y = m_customPlot->yAxis->pixelToCoord(loc->pos().y());
-    double xValue, yValue;
-
-    xValue = x; //xValue就是游标的横坐标
-    yValue = y; //yValue就是游标的纵坐标
-
-    m_tracer->position->setCoords(xValue, yValue);//设置游标位置
-    m_tracerLabel->setText(QString("x = %1, y = %2").arg(xValue).arg(yValue));//设置游标说明内容
-    m_customPlot->replot();//绘制器一定要重绘，否则看不到游标位置更新情况
-}
-#endif
-
 void Widget::Publish_or_Debug_Ver()
 {
-#if 1
+#if 0
   ui->label_3->setVisible(false);
   ui->label_4->setVisible(false);
   ui->sendTextEdit->setVisible(false);
@@ -539,9 +335,18 @@ void Widget::getMotorCurve()
         m_plotwidget->setWheelScaleY(checked);
     });
 #else
-    ui->groupBox_3->setVisible(false);
+    // 勾选X轴缩放
+    connect(ui->cbXAxis, &QCheckBox::toggled, this, [=](bool checked){
+        m_ProxyPlot->setZoomX(checked);
+    });
+    // 勾选Y轴缩放
+    connect(ui->cbYAxis, &QCheckBox::toggled, this, [=](bool checked){
+        m_ProxyPlot->setZoomY(checked);
+    });
+
+    ui->pbCurveMode->setVisible(false);
 #endif
-    //ui->pbCurveMode->setVisible(false);
+
     //ui->MotorTemp->setEnabled(false);
     //ui->DrvTemp->setEnabled(false);
 
@@ -560,7 +365,14 @@ void Widget::On_pbExportExcel()
     if(!dir.exists())
         dir.mkdir(".");
     strFileName = strPath + "/" + strFileName + ".csv";
+#ifdef QT_DEBUG
+    if(m_ProxyPlot->export2CSVFile(strFileName))
+      QMessageBox::information(this, "提示", "测试数据保存成功！");
+    else
+      QMessageBox::critical(this, "提示", "测试数据保存失败！");
+#else
     m_plotwidget->exportToCsv(strFileName);
+#endif
 }
 
 void Widget::On_pbSnapShot()
@@ -576,7 +388,7 @@ void Widget::On_pbSnapShot()
 
     // 保存图片
  #ifdef QT_DEBUG
-    if(true == m_customPlot->savePng(strFileName, 500, 300, 1.0, -1, 255))
+    if(true == m_ProxyPlot->saveImage(strFileName))
 #else
     if(true == m_plotwidget->saveScreenshot(strFileName))
 #endif
@@ -685,111 +497,112 @@ void Widget::On_ckPosCheckchanged(bool checked)
 {
     if(checked)
     {
+#ifdef QT_DEBUG
+        m_ProxyPlot->setGrapVisable(0, true);
+        m_ProxyPlot->setGrapYRange(-50.0f, 50.0f);
+#else
         m_plotwidget->m_cd.bPosVisable = true;
-#ifdef QT_DBUG
-        m_customPlot->graph(m_nameToGraphMap[CURRENTPOS])->setVisible(true);
+        m_plotwidget->m_yMin = -50.0f;
+        m_plotwidget->m_yMax = 50.0f;
 #endif
     }
     else
     {
+#ifdef QT_DEBUG
+        m_ProxyPlot->setGrapVisable(0, false);
+#else
         m_plotwidget->m_cd.bPosVisable = false;
-#ifdef QT_DBUG
-        m_customPlot->graph(m_nameToGraphMap[CURRENTPOS])->setVisible(false);
 #endif
     }
-    m_plotwidget->m_yMin = -50.0f;
-    m_plotwidget->m_yMax = 50.0f;
-#ifdef QT_DBUG
-    m_customPlot->yAxis->setRange(-50, 50);
-#endif
 }
 
 void Widget::On_RPMCheckchanged(bool checked)
 {
     if(checked)
     {
+#ifdef QT_DEBUG
+        m_ProxyPlot->setGrapVisable(1, true);
+        m_ProxyPlot->setGrapYRange(-100.0f, 100.0f);
+#else
         m_plotwidget->m_cd.bRPMVisable = true;
-#ifdef QT_DBUG
-        m_customPlot->graph(m_nameToGraphMap[RPMS])->setVisible(true);
+        m_plotwidget->m_yMin = -100.0f;
+        m_plotwidget->m_yMax = 100.0f;
 #endif
     }else{
+#ifdef QT_DEBUG
+      m_ProxyPlot->setGrapVisable(1, false);
+#else
       m_plotwidget->m_cd.bRPMVisable = false;
-#ifdef QT_DBUG
-      m_customPlot->graph(m_nameToGraphMap[RPMS])->setVisible(false);
 #endif
     }
-    m_plotwidget->m_yMin = -100.0f;
-    m_plotwidget->m_yMax = 100.0f;
-#ifdef QT_DBUG
-    m_customPlot->yAxis->setRange(-100, 100);
-#endif
 }
 
 void Widget::On_PhaseCurrentCheckchanged(bool checked)
 {
     if(checked)
     {
+#ifdef QT_DEBUG
+        m_ProxyPlot->setGrapVisable(2, true);
+        m_ProxyPlot->setGrapYRange(-5.0f, 5.0f);
+#else
         m_plotwidget->m_cd.bCurrentVisable = true;
-#ifdef QT_DBUG
-        m_customPlot->graph(m_nameToGraphMap[PHASECURRENT])->setVisible(true);
+        m_plotwidget->m_yMin = -100.0f;
+        m_plotwidget->m_yMax = 100.0f;
 #endif
     }else{
+#ifdef QT_DEBUG
+      m_ProxyPlot->setGrapVisable(2, false);
+#else
       m_plotwidget->m_cd.bCurrentVisable = false;
-#ifdef QT_DBUG
-      m_customPlot->graph(m_nameToGraphMap[PHASECURRENT])->setVisible(false);
 #endif
     }
-    m_plotwidget->m_yMin = -100.0f;
-    m_plotwidget->m_yMax = 100.0f;
-#ifdef QT_DBUG
-    m_customPlot->yAxis->setRange(-100, 100);
-#endif
 }
 
 void Widget::On_MotorTempCheckchanged(bool checked)
 {
     if(checked)
     {
+#ifdef QT_DEBUG
+        m_ProxyPlot->setGrapVisable(3, true);
+        m_ProxyPlot->setGrapYRange(-250.0f, 250.0f);
+#else
         m_plotwidget->m_cd.bMotorTempVisable = true;
-#ifdef QT_DBUG
-        m_customPlot->graph(m_nameToGraphMap[MOTORTEMP])->setVisible(true);
+        m_plotwidget->m_yMin = -250.0f;
+        m_plotwidget->m_yMax = 250.0f;
 #endif
     }
     else
     {
+#ifdef QT_DEBUG
+        m_ProxyPlot->setGrapVisable(3, false);
+#else
         m_plotwidget->m_cd.bMotorTempVisable = false;
-#ifdef QT_DBUG
-        m_customPlot->graph(m_nameToGraphMap[MOTORTEMP])->setVisible(false);
 #endif
     }
-    m_plotwidget->m_yMin = -250.0f;
-    m_plotwidget->m_yMax = 250.0f;
-#ifdef QT_DBUG
-    m_customPlot->yAxis->setRange(-250, 250);
-#endif
 }
 
 void Widget::On_DrvTempCheckchanged(bool checked)
 {
     if(checked)
     {
+
+#ifdef QT_DEBUG
+        m_ProxyPlot->setGrapVisable(4, true);
+        m_ProxyPlot->setGrapYRange(-150.0f, 150.0f);
+#else
         m_plotwidget->m_cd.bDrvTempVisable = true;
-#ifdef QT_DBUG
-        m_customPlot->graph(m_nameToGraphMap[MOSTEMP])->setVisible(true);
+        m_plotwidget->m_yMin = -150.0f;
+        m_plotwidget->m_yMax = 150.0f;
 #endif
     }
     else
     {
+#ifdef QT_DEBUG
+        m_ProxyPlot->setGrapVisable(4, true);
+#else
         m_plotwidget->m_cd.bDrvTempVisable = false;
-#ifdef QT_DBUG
-        m_customPlot->graph(m_nameToGraphMap[MOSTEMP])->setVisible(false);
 #endif
     }
-    m_plotwidget->m_yMin = -150.0f;
-    m_plotwidget->m_yMax = 150.0f;
-#ifdef QT_DBUG
-    m_customPlot->yAxis->setRange(-150, 150);
-#endif
 }
 
 void Widget::On_MotorStatusChanged(bool checked)
@@ -2883,6 +2696,7 @@ void Widget::sendMixedControlCommand(quint8 mode, const QString& paramName, doub
                  .arg(paramName)
                  .arg(value));
 }
+
 QString Widget::getModeName(quint8 mode) {
     switch(mode) {
         case MODE_POSITION: return "位置";
@@ -3262,10 +3076,10 @@ void Widget::receiveCanData()
         return;
     }
 
-    //ZCAN_ReceiveFD_Data rxFdData[5];
-    //UINT recvCnt = ZCAN_ReceiveFD(canChannelHandle, rxFdData, 5, 10);
-    ZCAN_ReceiveFD_Data rxFdData[1];
-    UINT recvCnt = ZCAN_ReceiveFD(canChannelHandle, rxFdData, 1, 1);
+    ZCAN_ReceiveFD_Data rxFdData[5];
+    UINT recvCnt = ZCAN_ReceiveFD(canChannelHandle, rxFdData, 5, 10);
+    //ZCAN_ReceiveFD_Data rxFdData[1];
+    //UINT recvCnt = ZCAN_ReceiveFD(canChannelHandle, rxFdData, 1, 1);
     //qDebug() << "【接收轮询】本次读到帧数：" << recvCnt;
 
     if (recvCnt > 0)
@@ -3277,8 +3091,8 @@ void Widget::receiveCanData()
             quint32 recvPureId = rxFrame.can_id & CAN_EFF_MASK;
 
 #ifdef QT_DEBUG
-            QString frameType = isExtFrame ? "扩展帧" : "标准帧";
-            qDebug() << "帧类型：" << frameType << "  原始ID：0x" << QString::number(recvPureId, 16);
+            QString frameType = isExtFrame ? "ExtendFrm" : "StandardFrm";
+            qDebug() << "FrameTyp：" << frameType << "  OriginalID：0x" << QString::number(recvPureId, 16);
 #endif
             // 只处理标准帧 + 匹配目标ID
             if (!isExtFrame && recvPureId == canId)
@@ -3286,15 +3100,14 @@ void Widget::receiveCanData()
                 QByteArray recvBuf(reinterpret_cast<const char*>(rxFrame.data), rxFrame.len);
                 recvBuffer.append(recvBuf);
 #ifdef QT_DEBUG
-                qDebug() << "匹配成功，接收数据：" << recvBuf.toHex();
+                static QTime RecvTime = QTime::currentTime();
+                QString strTime = RecvTime.toString("mm:ss:zzz");
+                qDebug() << strTime << " " << recvBuf.toHex();
 #endif
             }
         }
         processRecvBuffer();
     }
-
-// // 强制重启定时器，持续轮询
-//    canReceiveTimer->start();
 }
 
 // -------------------------- 串口操作 --------------------------
@@ -3557,20 +3370,100 @@ bool Widget::openFirmwareFile(const QString &fileName)
         firmwareFile->close();
         delete firmwareFile;
     }
-    firmwareFile = new QFile(fileName);
-    if (!firmwareFile->open(QIODevice::ReadOnly)) {
+
+    QFile* fwFile = new QFile(fileName);
+    if (!fwFile->open(QIODevice::ReadOnly)) {
         QMessageBox::critical(this, tr("文件错误"),
-                             tr("无法打开固件文件：%1").arg(firmwareFile->errorString()));
-        delete firmwareFile;
-        firmwareFile = nullptr;
+                             tr("无法打开固件文件：%1").arg(fwFile->errorString()));
+        delete fwFile;
+        fwFile = nullptr;
         return false;
     }
-    binSize = firmwareFile->size();
+    binSize = fwFile->size();
     if (binSize == 0) {
         QMessageBox::warning(this, tr("文件警告"), tr("所选固件文件为空！"));
         return false;
     }
     updateStatus(tr("固件文件打开成功：%1 KB").arg(binSize / 1024.0, 0, 'f', 2));
+
+    // 读取整个密文文件
+   QByteArray cipherData = fwFile->readAll();
+   fwFile->close();
+   delete fwFile;
+   fwFile = nullptr;
+
+   if (cipherData.isEmpty()) {
+       QMessageBox::warning(this, tr("警告"), tr("文件为空！"));
+       return false;
+   }
+
+   // 准备输出文件
+   // 获取系统临时目录的路径
+   static QTime time = QTime::currentTime();
+   QString strDateTime = time.toString("hh_mm_ss");
+   QString tempDirPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+   m_strNewPath = tempDirPath + "/" + strDateTime + ".bin";
+
+   QFile* binFile = new QFile(m_strNewPath);
+   if (!binFile->open(QIODevice::WriteOnly)) {
+       QMessageBox::critical(this, tr("文件错误"),
+                            tr("无法打开输出文件：%1").arg(binFile->errorString()));
+       delete binFile;
+       binFile = nullptr;
+       return false;
+   }
+
+   // 整体解密
+   unsigned char* cipherBuf = (unsigned char*)cipherData.data();
+   unsigned int cipherLen = cipherData.size();
+   // 明文最大长度等于密文长度（解密后可能减少）
+   unsigned char* plainBuf = new unsigned char[cipherLen];
+   memset(plainBuf, 0, cipherLen);
+
+   // 直接传入 cipherLen，
+   aes_128_decrypt aes128Decrypt;
+   aes128Decrypt.my_aes_init();
+   unsigned int plainLen = aes128Decrypt.my_aes_decrypt(cipherBuf, plainBuf, cipherLen);
+
+   // 写入明文
+   binFile->write((const char*)plainBuf, plainLen);
+   m_binArr.append((const char*)plainBuf, 1024);
+
+   delete[] plainBuf;
+   binFile->close();
+   delete binFile;
+   binFile = nullptr;
+
+   //open decrypt .bin file for get it's real length
+   m_decryptFile = new QFile(m_strNewPath);
+   if (!m_decryptFile->open(QIODevice::ReadOnly)) {
+       QMessageBox::critical(this, tr("文件错误"),
+                            tr("无法打开固件文件：%1").arg(firmwareFile->errorString()));
+       delete m_decryptFile;
+       m_decryptFile = nullptr;
+       return false;
+   }
+   binSize = m_decryptFile->size();
+   if (binSize == 0) {
+       m_decryptFile->close();
+       delete m_decryptFile;
+       QMessageBox::warning(this, tr("文件警告"), tr("所选固件文件为空！"));
+       return false;
+   }
+
+   //open encrypt .bin file for download
+   firmwareFile = new QFile(fileName);
+   if (!firmwareFile->open(QIODevice::ReadOnly)) {
+       QMessageBox::critical(this, tr("文件错误"),
+                            tr("无法打开固件文件：%1").arg(firmwareFile->errorString()));
+       delete firmwareFile;
+       firmwareFile = nullptr;
+       return false;
+   }
+  return true;
+
+
+    /*//old aes algorithm, split data block for decrypt(need mutiple of 16 bytes,max not beyond 240,cause data format limit on unsigned char)
 
     //decrypt .bin file for download real data
     //each encrypt block size 160 byte
@@ -3578,68 +3471,91 @@ bool Widget::openFirmwareFile(const QString &fileName)
     quint64 uBinSize = binSize;
     int nReadTimes = uBinSize/nBlockSize + 1;
     char pBuff[nBlockSize];
-    QFile* binFile=nullptr;
     aes_128_decrypt aes128Decrypt;
 
+    unsigned char sourceMsg[nBlockSize];
+    unsigned char decrypt_data[nBlockSize];
+
+    //get system temp path for save decrypted bin file
+    static QTime time = QTime::currentTime();
+    QString strDateTime = time.toString("hh_mm_ss");
+    QString tempDirPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    m_strNewPath =tempDirPath + "/" + strDateTime + ".bin";
+
+    QFile* binFile = new QFile(m_strNewPath);
+    if (!binFile->open(QIODevice::WriteOnly | QIODevice::Append)) {
+        QMessageBox::critical(this, tr("文件错误"),
+                             tr("无法打开固件文件：%1").arg(binFile->errorString()));
+        delete binFile;
+        binFile = nullptr;
+        return false;
+    }
     m_binArr.clear();
+    aes128Decrypt.my_aes_init();
     for(int i = 0; i< nReadTimes; i++)
     {
         memset(pBuff, 0, sizeof(pBuff));
-        firmwareFile->seek(i * nBlockSize);
-        if(i==nReadTimes - 1)
+        fwFile->seek(i * nBlockSize);
+
+        if(i==nReadTimes - 1) //last package
         {
           nBlockSize = uBinSize % nBlockSize;
-          char pBuff2[nBlockSize];
-          firmwareFile->read(pBuff2, nBlockSize);
-          memcpy(pBuff, pBuff2, sizeof(pBuff2));
+          char pBuffs[nBlockSize];
+          unsigned char sourceMsgs[nBlockSize];
+          unsigned char decrypt_datas[nBlockSize];
+
+          fwFile->read(pBuffs, nBlockSize);
+
+          //be decrypt data
+          memset(decrypt_data, 0, nBlockSize);
+          memcpy(sourceMsgs, pBuffs, nBlockSize);
+
+          aes128Decrypt.PrintData("sourceMsg", sourceMsgs, nBlockSize);
+          aes128Decrypt.my_aes_decrypt(sourceMsgs, decrypt_datas, nBlockSize);
+
+          //save decrypted data
+          QByteArray baDecrypt;
+          baDecrypt.clear();
+          for(int i = 0; i< nBlockSize; i++)
+          {
+              baDecrypt.append(decrypt_datas[i]);
+              if(m_binArr.size()<1000)
+                m_binArr.append(decrypt_datas[i]);
+          }
+          binFile->write(baDecrypt , nBlockSize);
         }
         else
         {
-          firmwareFile->read(pBuff, nBlockSize);
+          fwFile->read(pBuff, nBlockSize);
+
+          //be decrypt data
+          memset(decrypt_data, 0, nBlockSize);
+          memcpy(sourceMsg, pBuff, nBlockSize);
+
+          aes128Decrypt.PrintData("sourceMsg", sourceMsg, nBlockSize);
+          aes128Decrypt.my_aes_decrypt(sourceMsg, decrypt_data, nBlockSize);
+
+          //save decrypted data
+          QByteArray baDecrypt;
+          for(int i = 0; i< nBlockSize; i++)
+          {
+              baDecrypt.append(decrypt_data[i]);
+              if(m_binArr.size()<1000)
+                m_binArr.append(decrypt_data[i]);
+          }
+          binFile->write(baDecrypt , nBlockSize);
         }
 
-        //要解密的内容
-        unsigned char sourceMsg[nBlockSize];
-        unsigned char decrypt_data[nBlockSize];
-
-        memset(decrypt_data, 0, nBlockSize);
-        memcpy(sourceMsg, pBuff, nBlockSize);
-
-        aes128Decrypt.PrintData("sourceMsg", sourceMsg, nBlockSize);
-        aes128Decrypt.my_aes_decrypt(sourceMsg, decrypt_data, nBlockSize);
-
-        //保存加密后的文件
-        //获取系统临时目录的路径
-        QString tempDirPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-        m_strNewPath =tempDirPath + "/decrypt.bin";
-
-        binFile = new QFile(m_strNewPath);
-        if (!binFile->open(QIODevice::WriteOnly | QIODevice::Append)) {
-            QMessageBox::critical(this, tr("文件错误"),
-                                 tr("无法打开固件文件：%1").arg(binFile->errorString()));
-            delete binFile;
-            binFile = nullptr;
-            return false;
-        }
-        else
-        {
-            QByteArray baDecrypt;
-            for(int i = 0; i< nBlockSize; i++)
-            {
-                baDecrypt.append(decrypt_data[i]);
-                if(m_binArr.size()<1000)
-                  m_binArr.append(decrypt_data[i]);
-            }
-            binFile->write(baDecrypt , nBlockSize);
-
-            binFile->close();
-            delete binFile;
-            binFile = nullptr;
-        }
     }
+    binFile->close();
+    delete binFile;
+    binFile = nullptr;
+
+    fwFile->close();
+    delete fwFile;
+    fwFile = nullptr;
 
     //open decrypt .bin file for...
-    firmwareFile->close();
     firmwareFile = new QFile(m_strNewPath);
     if (!firmwareFile->open(QIODevice::ReadOnly)) {
         QMessageBox::critical(this, tr("文件错误"),
@@ -3654,7 +3570,8 @@ bool Widget::openFirmwareFile(const QString &fileName)
         return false;
     }
 
-    return true;
+    */
+
 }
 
 void Widget::on_viewButton_clicked()
@@ -3803,6 +3720,22 @@ void Widget::sendDataCommand(quint8 index, const QByteArray &data)
     timer->start();
 }
 
+bool Widget::removeDecryptBinFile()
+{
+  bool bRemoved = false;
+  if(m_decryptFile!=nullptr)
+  {
+      if (m_decryptFile && m_decryptFile->isOpen())
+      {
+          m_decryptFile->close();
+          bRemoved = m_decryptFile->remove(m_strNewPath);
+          delete m_decryptFile;
+      }
+  }
+
+  return bRemoved;
+}
+
 void Widget::sendNextPacket()
 {
     if (!firmwareFile || !firmwareFile->isOpen()) {
@@ -3816,11 +3749,7 @@ void Widget::sendNextPacket()
     if (offset >= binSize) {
         updateStatus("所有数据包已发送完毕");
 
-        if(firmwareFile->exists())
-        {
-            firmwareFile->close();
-            firmwareFile->remove(m_strNewPath);
-        }
+        removeDecryptBinFile();
         return;
     }
     QByteArray data = readFirmwareData(offset, 1024);
@@ -3829,6 +3758,8 @@ void Widget::sendNextPacket()
         upgradeState = STATE_ERROR;
         ui->startUpgradeButton->setEnabled(true);
         ui->cancelButton->setEnabled(false);
+
+        removeDecryptBinFile();
         return;
     }
     sendDataCommand(currentPacketIndex, data);
@@ -3836,7 +3767,6 @@ void Widget::sendNextPacket()
 
 QByteArray Widget::readFirmwareData(qint64 offset, qint64 maxSize)
 {
-  //bool bOffsetReadOK = true;
   if (!firmwareFile || !firmwareFile->isOpen()) {
       return QByteArray();
   }
@@ -3846,35 +3776,6 @@ QByteArray Widget::readFirmwareData(qint64 offset, qint64 maxSize)
       return QByteArray();
   }
   return firmwareFile->read(maxSize);
-
-/*
-  //判断数据结尾
-  if(m_binArr.at(offset)=='\0')
-    m_nTryReadT++;
-  if(m_nTryReadT>0)
-  {
-    int nReadTimes=1;
-    while(offset + nReadTimes < (qint64)m_uBinSize)
-    {
-      if(m_binArr.at(offset + nReadTimes)=='\0')
-        nReadTimes++;
-
-      if(nReadTimes>0x0f)
-      {
-          bOffsetReadOK = false;
-          break;
-      }
-    }
-  }
-  if(!bOffsetReadOK)
-  {
-      updateStatus(QString("固件文件定位失败：偏移%1字节").arg(offset));
-      return QByteArray();
-  }
-
-  return m_binArr.mid(offset, maxSize);
-  */
-
 }
 
 // -------------------------- 接收数据解析 --------------------------
@@ -3910,7 +3811,7 @@ void Widget::processRecvBuffer()
         {
             if(cmdId == CMD_COMBINED_DATA)//曲线绘制
             {
-                if(m_PauseCapture)
+                //if(m_PauseCapture)
                     DrawRealTimeCurve(cmdId, action, fullPacket, dataLen);
                 return;
             }
@@ -3930,9 +3831,9 @@ void Widget::processRecvBuffer()
 
                 QString log = QString("%1 %2 数据:%3\n").arg(timeStr).arg(rxFlag).arg(dataHex);
                 ui->receiveTextEdit->append(log);
-            }
 
-            processResponse(cmdId, action, index, fullPacket, dataLen);
+                processResponse(cmdId, action, index, fullPacket, dataLen);
+            }
         }
         else
         {
@@ -3989,6 +3890,7 @@ bool Widget::parseResponse(const QByteArray &data, quint8 &cmdId, quint8 &action
 
     if (data.size() != 7 + length + 1) return false;
     QByteArray content = data.left(data.size() - 1);
+
     if (calculateChecksum(content) != static_cast<quint8>(data[data.size() - 1]))
       return false;
 
@@ -4031,11 +3933,11 @@ bool Widget::DrawRealTimeCurve(quint8 cmdId, quint8 action, const QByteArray &fu
              return bRight;
          }
 
-          QByteArray combinedPayload = fullPacket.mid(7, dataLen);
-          if(m_displayMotorStatus){
-             quint16 alarmCode = (static_cast<quint8>(combinedPayload[0]) << 8) | static_cast<quint8>(combinedPayload[1]); // 从索引0开始，取2字节
-             processAlarmData(alarmCode);
-          }
+        QByteArray combinedPayload = fullPacket.mid(7, dataLen);
+        if(m_displayMotorStatus){
+           quint16 alarmCode = (static_cast<quint8>(combinedPayload[0]) << 8) | static_cast<quint8>(combinedPayload[1]); // 从索引0开始，取2字节
+           processAlarmData(alarmCode);
+        }
          QByteArray realTimePayload = combinedPayload.mid(2, 24); // 从索引2开始，取24字节
          processRealTimeData(realTimePayload); // 修正后的实时值解析
        } else {
@@ -4066,6 +3968,7 @@ void Widget::processResponse(quint8 cmdId, quint8 action, quint8 index, const QB
         }
     }
 */
+
     timer->stop();
     retryCount = 0;
     calibTimer->stop();
@@ -4080,9 +3983,11 @@ void Widget::processResponse(quint8 cmdId, quint8 action, quint8 index, const QB
         } else {
             updateStatus("升级静默指令执行失败！");
             upgradeState = STATE_ERROR;
-            ui->startUpgradeButton->setEnabled(true);
+            ui->startUpgradeButton->setEnabled(false);
             ui->cancelButton->setEnabled(false);
             lastSentCmdId = 0;
+
+            removeDecryptBinFile();
         }
 
         break;
@@ -4096,9 +4001,11 @@ void Widget::processResponse(quint8 cmdId, quint8 action, quint8 index, const QB
         } else {
             updateStatus("升级准备包执行失败！");
             upgradeState = STATE_ERROR;
-            ui->startUpgradeButton->setEnabled(true);
+            ui->startUpgradeButton->setEnabled(false);
             ui->cancelButton->setEnabled(false);
             lastSentCmdId = 0;
+
+            removeDecryptBinFile();
         }
 
         break;
@@ -4116,8 +4023,10 @@ void Widget::processResponse(quint8 cmdId, quint8 action, quint8 index, const QB
                 updateStatus(QString("数据包%1重试超过%2次，升级失败！")
                              .arg(index).arg(MAX_RETRY));
                 upgradeState = STATE_ERROR;
-                ui->startUpgradeButton->setEnabled(true);
+                ui->startUpgradeButton->setEnabled(false);
                 ui->cancelButton->setEnabled(false);
+
+                removeDecryptBinFile();
             } else {
                 sendDataCommand(index, readFirmwareData((index - 1) * 1024, 1024));
             }
@@ -4134,6 +4043,7 @@ void Widget::processResponse(quint8 cmdId, quint8 action, quint8 index, const QB
             ui->statusLabel->setText("IAP升级失败！");
             upgradeState = STATE_ERROR;
         }
+        removeDecryptBinFile();
 
         ui->startUpgradeButton->setEnabled(true);
         ui->cancelButton->setEnabled(false);
@@ -4556,71 +4466,71 @@ void Widget::processResponse(quint8 cmdId, quint8 action, quint8 index, const QB
         }
         lastSentCmdId = 0;
         break;
-                case CMD_SET_POS_LOOP:
-                    if (action == ACTION_SUCCESS) {
-                        ui->statusLabel_3->setText("位置环参数设置成功");
-                        updateStatus("位置环参数设置成功");
-                    } else {
-                        ui->statusLabel_3->setText("位置环参数设置失败");
-                        updateStatus(QString("位置环参数设置失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
-                    }
-                    lastSentCmdId = 0;
-                    break;
+    case CMD_SET_POS_LOOP:
+        if (action == ACTION_SUCCESS) {
+            ui->statusLabel_3->setText("位置环参数设置成功");
+            updateStatus("位置环参数设置成功");
+        } else {
+            ui->statusLabel_3->setText("位置环参数设置失败");
+            updateStatus(QString("位置环参数设置失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
+        }
+        lastSentCmdId = 0;
+        break;
 
-                case CMD_SET_SPEED_LOOP:
-                    if (action == ACTION_SUCCESS) {
-                        ui->statusLabel_3->setText("速度环参数设置成功");
-                        updateStatus("速度环参数设置成功");
-                    } else {
-                        ui->statusLabel_3->setText("速度环参数设置失败");
-                        updateStatus(QString("速度环参数设置失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
-                    }
-                    lastSentCmdId = 0;
-                    break;
+    case CMD_SET_SPEED_LOOP:
+        if (action == ACTION_SUCCESS) {
+            ui->statusLabel_3->setText("速度环参数设置成功");
+            updateStatus("速度环参数设置成功");
+        } else {
+            ui->statusLabel_3->setText("速度环参数设置失败");
+            updateStatus(QString("速度环参数设置失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
+        }
+        lastSentCmdId = 0;
+        break;
 
-                case CMD_SET_CURRENT_LOOP:
-                    if (action == ACTION_SUCCESS) {
-                        ui->statusLabel_3->setText("电流环参数设置成功");
-                        updateStatus("电流环参数设置成功");
-                    } else {
-                        ui->statusLabel_3->setText("电流环参数设置失败");
-                        updateStatus(QString("电流环参数设置失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
-                    }
-                    lastSentCmdId = 0;
-                    break;
+    case CMD_SET_CURRENT_LOOP:
+        if (action == ACTION_SUCCESS) {
+            ui->statusLabel_3->setText("电流环参数设置成功");
+            updateStatus("电流环参数设置成功");
+        } else {
+            ui->statusLabel_3->setText("电流环参数设置失败");
+            updateStatus(QString("电流环参数设置失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
+        }
+        lastSentCmdId = 0;
+        break;
 
-                case CMD_SET_ENCODER_LOOP:
-                    if (action == ACTION_SUCCESS) {
-                        ui->statusLabel_3->setText("编码器参数设置成功");
-                        updateStatus("编码器参数设置成功");
-                    } else {
-                        ui->statusLabel_3->setText("编码器参数设置失败");
-                        updateStatus(QString("编码器参数设置失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
-                    }
-                    lastSentCmdId = 0;
-                    break;
+    case CMD_SET_ENCODER_LOOP:
+        if (action == ACTION_SUCCESS) {
+            ui->statusLabel_3->setText("编码器参数设置成功");
+            updateStatus("编码器参数设置成功");
+        } else {
+            ui->statusLabel_3->setText("编码器参数设置失败");
+            updateStatus(QString("编码器参数设置失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
+        }
+        lastSentCmdId = 0;
+        break;
 
-                case CMD_SET_MOTOR_LOOP:
-                    if (action == ACTION_SUCCESS) {
-                        ui->statusLabel_3->setText("电机参数设置成功");
-                        updateStatus("电机参数设置成功");
-                    } else {
-                        ui->statusLabel_3->setText("电机参数设置失败");
-                        updateStatus(QString("电机参数设置失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
-                    }
-                    lastSentCmdId = 0;
-                    break;
+    case CMD_SET_MOTOR_LOOP:
+        if (action == ACTION_SUCCESS) {
+            ui->statusLabel_3->setText("电机参数设置成功");
+            updateStatus("电机参数设置成功");
+        } else {
+            ui->statusLabel_3->setText("电机参数设置失败");
+            updateStatus(QString("电机参数设置失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
+        }
+        lastSentCmdId = 0;
+        break;
 
-                case CMD_SET_MIT_LOOP:
-                    if (action == ACTION_SUCCESS) {
-                        ui->statusLabel_3->setText("MIT参数设置成功");
-                        updateStatus("MIT参数设置成功");
-                    } else {
-                        ui->statusLabel_3->setText("MIT参数设置失败");
-                        updateStatus(QString("MIT参数设置失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
-                    }
-                    lastSentCmdId = 0;
-                    break;
+    case CMD_SET_MIT_LOOP:
+        if (action == ACTION_SUCCESS) {
+            ui->statusLabel_3->setText("MIT参数设置成功");
+            updateStatus("MIT参数设置成功");
+        } else {
+            ui->statusLabel_3->setText("MIT参数设置失败");
+            updateStatus(QString("MIT参数设置失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
+        }
+        lastSentCmdId = 0;
+        break;
 
 //                case CMD_READ_CTRL_PARAM:
 //                    if (action == ACTION_SUCCESS) {
@@ -4639,16 +4549,16 @@ void Widget::processResponse(quint8 cmdId, quint8 action, quint8 index, const QB
 //                    lastSentCmdId = 0;
                     break;
 
-       case CMD_SET_POS:
-        if (action == ACTION_SUCCESS) {
-          ui->statusLabel_2->setText("位置指令发送成功");
-            updateStatus("位置指令执行成功（设备响应成功）");
-          } else {
-           ui->statusLabel_2->setText("位置指令发送失败");
-           updateStatus(QString("位置指令执行失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
-           }
-          lastSentCmdId = 0;
-      break;
+    case CMD_SET_POS:
+    if (action == ACTION_SUCCESS) {
+      ui->statusLabel_2->setText("位置指令发送成功");
+        updateStatus("位置指令执行成功（设备响应成功）");
+      } else {
+       ui->statusLabel_2->setText("位置指令发送失败");
+       updateStatus(QString("位置指令执行失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
+       }
+      lastSentCmdId = 0;
+    break;
     case CMD_SET_SPEED:
      if (action == 0x00 || action == ACTION_SUCCESS) {
        ui->statusLabel_2->setText("速度指令发送成功");
@@ -4722,6 +4632,7 @@ void Widget::handleTimeout()
     default:
         return;
     }
+    removeDecryptBinFile();
 
     upgradeState = STATE_ERROR;
     ui->startUpgradeButton->setEnabled(true);
@@ -4997,22 +4908,27 @@ void Widget::processRealTimeData(const QByteArray &payload)
 
     //customplot add data 20260720
     if(m_PauseCapture)
-      {
+    {
+#ifdef QT_DEBUG
+        key /= 1000.0f;
+        m_ProxyPlot->DrawingCurve(true);
+        m_ProxyPlot->slotCanFdRecv(key, currentPos, currentSpeed*0.104719755, currentPhaseCurrent, currentMosTem, currentMosTem);
+
+#else
         m_plotwidget->appendData(CURRENTPOS, key, currentPos);
         m_plotwidget->appendData(RPMS, key, currentSpeed*0.104719755);
         m_plotwidget->appendData(PHASECURRENT, key, currentPhaseCurrent);
         m_plotwidget->appendData(MOTORTEMP, key, currentMotorTem);
         m_plotwidget->appendData(MOSTEMP, key, currentMosTem);
-
-#ifdef QT_DEBUG
-
-        Plotting(CURRENTPOS, currentPos);
-        Plotting(RPMS, currentSpeed*0.104719755);
-        Plotting(PHASECURRENT, currentPhaseCurrent);
-        Plotting(MOTORTEMP, currentMotorTem);
-        Plotting(MOSTEMP, currentMosTem);
-
 #endif
+    }
+    else
+    {
+#ifdef QT_DEBUG
+      m_ProxyPlot->DrawingCurve(false);
+#endif
+
+
     }
 }
 
@@ -5097,6 +5013,7 @@ QByteArray Widget::uint16ToBigEndian(quint16 value)
     data.append(static_cast<quint8>(value & 0xFF));
     return data;
 }
+
 QByteArray Widget::doubleToBigEndian(double value)
 {
     union {
@@ -5132,14 +5049,14 @@ quint32 Widget::bigEndianToUint8(const QByteArray &data)
 int  Widget::bigEndianToint32(const QByteArray &data)
 {
     if (data.size() < 4) {
-           updateStatus("bigEndianToInt32：数据长度不足4字节，返回0");
-           return 0;
-       }
-       quint32 rawUnsigned = (static_cast<quint8>(data[0]) << 24) |
-                            (static_cast<quint8>(data[1]) << 16) |
-                            (static_cast<quint8>(data[2]) << 8) |
-                            static_cast<quint8>(data[3]);
-        return static_cast<int32_t>(rawUnsigned);
+         updateStatus("bigEndianToInt32：数据长度不足4字节，返回0");
+         return 0;
+     }
+     quint32 rawUnsigned = (static_cast<quint8>(data[0]) << 24) |
+                          (static_cast<quint8>(data[1]) << 16) |
+                          (static_cast<quint8>(data[2]) << 8) |
+                          static_cast<quint8>(data[3]);
+    return static_cast<int32_t>(rawUnsigned);
 }
 
 double Widget::bigEndianToDouble(const QByteArray &data)
@@ -5157,18 +5074,18 @@ double Widget::bigEndianToDouble(const QByteArray &data)
 
 void Widget::on_calibModeBtn_clicked()
 {
-       if (isControlModeOpen == true)
-       {
-           QMessageBox::warning(this, tr("操作提示"), tr("请先关闭控制模式！"), QMessageBox::Ok);
-           return;
-       }
-       if (isMortorEnableOpen == true)
-       {
-           QMessageBox::warning(this, tr("操作提示"), tr("请先关闭电机使能！"), QMessageBox::Ok);
-           return;
-       }
-    quint8 enable = (ui->calibModeBtn->text() == "打开标定模式") ? 1 : 0;
-    sendCalibCommand(CMD_CALIB_MODE,enable);
+  if (isControlModeOpen == true)
+  {
+     QMessageBox::warning(this, tr("操作提示"), tr("请先关闭控制模式！"), QMessageBox::Ok);
+     return;
+  }
+  if (isMortorEnableOpen == true)
+  {
+     QMessageBox::warning(this, tr("操作提示"), tr("请先关闭电机使能！"), QMessageBox::Ok);
+     return;
+  }
+  quint8 enable = (ui->calibModeBtn->text() == "打开标定模式") ? 1 : 0;
+  sendCalibCommand(CMD_CALIB_MODE,enable);
 }
 
 void Widget::on_elecAngleZeroBtn_clicked()
@@ -5434,38 +5351,38 @@ void Widget::on_readMotorIDBtn_clicked()
 
 void Widget::on_writeMotorIDBtn_clicked()
 {
-        if (isCalibModeOpen || isControlModeOpen || isMortorEnableOpen) {
-            QString tip = isCalibModeOpen ? "标定模式" :
-                          (isControlModeOpen ? "控制模式" : "电机使能");
-            QMessageBox::warning(this, tr("操作提示"), tr("请先关闭%1！").arg(tip), QMessageBox::Ok);
-            return;
-        }
+  if (isCalibModeOpen || isControlModeOpen || isMortorEnableOpen) {
+      QString tip = isCalibModeOpen ? "标定模式" :
+                    (isControlModeOpen ? "控制模式" : "电机使能");
+      QMessageBox::warning(this, tr("操作提示"), tr("请先关闭%1！").arg(tip), QMessageBox::Ok);
+      return;
+  }
 
-        QString input = ui->MotorIdEdit->text().trimmed();
-        if (input.isEmpty()) {
-            QMessageBox::warning(this, tr("电机ID警告"), tr("请输入有效的十六进制ID！"), QMessageBox::Ok);
-            return;
-        }
+  QString input = ui->MotorIdEdit->text().trimmed();
+  if (input.isEmpty()) {
+      QMessageBox::warning(this, tr("电机ID警告"), tr("请输入有效的十六进制ID！"), QMessageBox::Ok);
+      return;
+  }
 
-        int pos = 0;
-        if (ui->MotorIdEdit->validator()->validate(input, pos) != QValidator::Acceptable) {
-            QMessageBox::warning(this, tr("电机ID警告"), tr("无效格式！请输入如0x001或1的十六进制值"), QMessageBox::Ok);
-            return;
-        }
+  int pos = 0;
+  if (ui->MotorIdEdit->validator()->validate(input, pos) != QValidator::Acceptable) {
+      QMessageBox::warning(this, tr("电机ID警告"), tr("无效格式！请输入如0x001或1的十六进制值"), QMessageBox::Ok);
+      return;
+  }
 
-        bool ok = false;
-        quint32 newMotorId = input.startsWith("0x", Qt::CaseInsensitive)
-                            ? input.mid(2).toUInt(&ok, 16)
-                            : input.toUInt(&ok, 16);
+  bool ok = false;
+  quint32 newMotorId = input.startsWith("0x", Qt::CaseInsensitive)
+                      ? input.mid(2).toUInt(&ok, 16)
+                      : input.toUInt(&ok, 16);
 
-        if (!ok || newMotorId > 0x000000FF) {
-            QMessageBox::warning(this, tr("电机ID警告"), tr("ID范围：0~0x000000FF！"), QMessageBox::Ok);
-            return;
-        }
+  if (!ok || newMotorId > 0x000000FF) {
+      QMessageBox::warning(this, tr("电机ID警告"), tr("ID范围：0~0x000000FF！"), QMessageBox::Ok);
+      return;
+  }
 
-        MotorId = newMotorId;
-        QByteArray payload = uint32ToBigEndian(MotorId);
-        sendControlCommand(CMD_SET_MOTORID, payload, 1);
+  MotorId = newMotorId;
+  QByteArray payload = uint32ToBigEndian(MotorId);
+  sendControlCommand(CMD_SET_MOTORID, payload, 1);
 }
 
 void Widget::on_motorEnableBtn_clicked()

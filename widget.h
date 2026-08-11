@@ -18,6 +18,7 @@
 
 #include "plotwidget.h"
 #include "qcustomplot.h"
+#include "proxyplot.h"
 #include "aes_128_decrypt.h"
 
 // 周立功CAN库头文件
@@ -244,6 +245,7 @@ public:
     explicit Widget(QWidget *parent = nullptr);
     ~Widget();
 
+
 private slots:
 
     void On_ckPosCheckchanged(bool checked);
@@ -266,6 +268,7 @@ private slots:
     void checkCustomBaudRate(int idx);
     void on_refreshButton_clicked();
 
+    bool removeDecryptBinFile();
 
     void on_openCanButton_clicked();
 
@@ -373,11 +376,13 @@ private:
     Ui::Widget *ui;
     //20260709
     PlotWidget* m_plotwidget;//curve widget for realtime motor params
-
-    //CurveData m_CurveData;
     void getMotorCurve();
 
 #ifdef QT_DEBUG
+
+    proxyPlot* m_ProxyPlot;
+
+
     //20260720 use qcustomplot for drawing each motor params curve
     QCustomPlot *m_customPlot;
     QCPItemTracer* m_tracer;
@@ -421,6 +426,7 @@ private:
     QByteArray m_binArr;//解密后的bin数据
 
     QString fileLocation;
+    QFile* m_decryptFile;
     QFile *firmwareFile;
     QString m_strNewPath;
     quint64 binSize;
