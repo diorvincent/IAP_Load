@@ -591,7 +591,6 @@ private:
     bool openFirmwareFile(const QString &fileName);
     QByteArray readFirmwareData(qint64 offset, qint64 maxSize);
     void processRecvBuffer();
-    void processRecvBuffer2();
     QByteArray buildPacket(quint8 index, quint8 cmdId, quint8 action, const QByteArray &payload);
     quint8 calculateChecksum(const QByteArray &data);
     bool parseResponse(const QByteArray &data, quint8 &cmdId, quint8 &action, quint8 &index, quint16 &length);
