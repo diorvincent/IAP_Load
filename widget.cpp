@@ -598,7 +598,7 @@ void Widget::On_DrvTempCheckchanged(bool checked)
     else
     {
 #ifdef QT_DEBUG
-        m_ProxyPlot->setGrapVisable(4, true);
+        m_ProxyPlot->setGrapVisable(4, false);
 #else
         m_plotwidget->m_cd.bDrvTempVisable = false;
 #endif
@@ -2796,8 +2796,13 @@ void Widget::fillCanConfig()
     ui->canBaudRateBox->clear();
 
     ui->canBaudRateBox->addItem("(1M仲裁+5M数据)");
-
     ui->openCanButton->setText("打开CANFD设备");
+
+    ui->cbDevice->clear();
+    ui->cbDevice->addItem("ZLG_CAN");
+    ui->cbDevice->addItem("Chuangxin_CAN");
+
+
 
 //    canFdBaudMap.insert("(500K仲裁+5M数据)", qMakePair(104286U, 66055U));
 //    canFdBaudMap.insert("(1M仲裁+2M数据)",    qMakePair(101946U, 66057U));
@@ -2807,11 +2812,9 @@ void Widget::fillCanConfig()
 //    canFdBaudMap.insert("(2M仲裁+2M数据)",    qMakePair(100606U, 66057U));
 //    // 仲裁：2M     数据：5M
 //    canFdBaudMap.insert("(2M仲裁+5M数据)",    qMakePair(100606U, 66055U));
-
 //    for(auto key : canFdBaudMap.keys()){
 //        ui->canBaudRateBox->addItem(key);
 //    }
-
 //    ui->openCanButton->setText("打开CANFD设备");
 }
 
@@ -2832,6 +2835,8 @@ QString Widget::getCanErrorInfo()
     if (canChannelHandle == INVALID_CHANNEL_HANDLE) {
         return "通道未初始化";
     }
+
+//#ifdef QT_NO_DEBUG
     ZCAN_CHANNEL_ERR_INFO errInfo;
     if (ZCAN_ReadChannelErrInfo(canChannelHandle, &errInfo) != STATUS_OK) {
         return "获取错误信息失败";
@@ -2839,275 +2844,228 @@ QString Widget::getCanErrorInfo()
     QString errStr = "错误码: 0x" + QString::number(errInfo.error_code, 16);
     errStr += ", 消极错误: " + QString::number(errInfo.passive_ErrData[0]);
     errStr += ", 仲裁丢失: " + QString::number(errInfo.arLost_ErrData);
+//#else
+//    VCI_ERR_INFO errInfo;
+//    VCI_ReadErrInfo((DWORD)canDeviceHandle, 0, 0, &errInfo);
+//    QString errStr = "错误码: 0x" + QString::number(errInfo.ErrCode, 16);
+//    errStr += ", 消极错误: " + QString::number(errInfo.Passive_ErrData[0]);
+//    errStr += ", 仲裁丢失: " + QString::number(errInfo.ArLost_ErrData);
+//#endif
+
+
     return errStr;
 }
 
 bool Widget::openCanDevice()
 {
-        if (canDeviceHandle != INVALID_DEVICE_HANDLE) {
-            ZCAN_CloseDevice(canDeviceHandle);
-        }
-        canDeviceHandle = ZCAN_OpenDevice(ZCAN_USBCANFD_200U, 0, 0);
-        if (canDeviceHandle == INVALID_DEVICE_HANDLE) {
-            QMessageBox::critical(nullptr, tr("CANFD错误"), tr("打开设备失败！"));
-            return false;
-        }
+    bool bOpen = false;
+    int chn_idx = ui->canPortBox->currentIndex();
+    int nCANIndex = ui->cbDevice->currentIndex();
+    if(nCANIndex == 0)  //zlgCAN
+    {
+      m_canBase = new ZLGCan_s();
+      bOpen = m_canBase->openCanDevice(chn_idx);
 
-        int chn_idx = ui->canPortBox->currentIndex();
-        qDebug() << "通道：" << chn_idx ;
-        char path[24];
-        // 仲裁段波特：1Mbps
-        sprintf(path, "%d/canfd_abit_baud_rate", chn_idx);
-        if (ZCAN_SetValue(canDeviceHandle, path, "1000000") != STATUS_OK) {
-            qDebug() << "设置仲裁1M波特失败";
-        }
-        // 数据段波特：5Mbps
-        sprintf(path, "%d/canfd_dbit_baud_rate", chn_idx);
-        if (ZCAN_SetValue(canDeviceHandle, path, "5000000") != STATUS_OK) {
-            qDebug() << "设置数据5M波特失败";
-        }
+      connect(m_canBase, &canBase::updateSendStatus, this, &Widget::updateSendSt);
 
-        ZCAN_CHANNEL_INIT_CONFIG canInit;
-        memset(&canInit, 0, sizeof(canInit));
-        canInit.can_type = TYPE_CANFD;
-        canInit.canfd.mode = 0;
-        canInit.canfd.acc_code = 0;
-        canInit.canfd.acc_mask = 0x000000FF;
-        canInit.canfd.filter = 0;
+      canReceiveTimer->blockSignals(false);
+      canReceiveTimer->start();
+      qDebug() << "接收定时器已启动，间隔1ms";
+      qDebug() << "打开CANFD设备成功，通道：" << chn_idx;
+    }
+    else  //chunagxinCAN
+    {
+      m_CXCan = new ChuangXinCan();
+      if(m_CXCan==nullptr)
+        return false;
+      bOpen = m_CXCan->openCanDevice(chn_idx);
 
-//      canInit.canfd.abit_timing = 0x0005000F;
-//      canInit.canfd.dbit_timing = 0x0001000F;
+      connect(m_CXCan, &ChuangXinCan::recvedCANFDData, this, &Widget::recvCANFDData,Qt::QueuedConnection);
+      connect(m_CXCan, &ChuangXinCan::updateSendStatus, this, &Widget::updateSendSt);
+      m_CXCan->start();
+    }
 
-        canChannelHandle = ZCAN_InitCAN(canDeviceHandle, chn_idx, &canInit);
-        if (canChannelHandle == INVALID_CHANNEL_HANDLE) {
-             qDebug() << "初始化通道失败：" << canChannelHandle ;
-            ZCAN_CloseDevice(canDeviceHandle);
-            canDeviceHandle = INVALID_DEVICE_HANDLE;
-            return false;
-        }
+    if(bOpen)
+    {
+        canChannelHandle = m_canBase->getCHNHandle();
+        canDeviceHandle = m_canBase->getDevHandle();
+        canOpenStatus = bOpen;
 
-        sprintf(path, "%d/initenal_resistance", chn_idx);
-        int res = ZCAN_SetValue(canDeviceHandle, path, "1");
-        if (res != STATUS_OK) {
-               qDebug() << "终端电阻启用失败，返回码：" << res;
-               QMessageBox::warning(this, "提示", "终端电阻启用失败，可能影响通信！");
-           } else {
-               qDebug() << "终端电阻启用成功（通道" << chn_idx << "）";
-           }
-        if (ZCAN_StartCAN(canChannelHandle) != STATUS_OK) {
-            QMessageBox::critical(nullptr, tr("CANFD错误"), tr("通道启动失败！"));
-            qDebug() << "启动失败（通道" << chn_idx << "）";
-            ZCAN_ResetCAN(canChannelHandle);
-            ZCAN_CloseDevice(canDeviceHandle);
-            canChannelHandle = INVALID_CHANNEL_HANDLE;
-            canDeviceHandle = INVALID_DEVICE_HANDLE;
-            return false;
-        }
-
-        canOpenStatus = true;
         ui->openCanButton->setText("关闭CANFD设备");
         ui->statusLabel_1->setText("CANFD已连接");
+        ui->cbDevice->setEnabled(false);
         ui->canPortBox->setEnabled(false);
         ui->canBaudRateBox->setEnabled(false);
         ui->canIdEdit->setEnabled(false);
 
-        canReceiveTimer->blockSignals(false);
-        canReceiveTimer->start();
-        qDebug() << "接收定时器已启动，间隔1ms";
-        qDebug() << "打开CANFD设备成功，通道：" << chn_idx;
         return true;
+    }
+
+    return false;
 }
 
 void Widget::closeCanDevice()
 {
-    if (canChannelHandle != INVALID_CHANNEL_HANDLE) {
-        ZCAN_ResetCAN(canChannelHandle);
-        canChannelHandle = INVALID_CHANNEL_HANDLE;
-    }
-    canReceiveTimer->stop();
-    canReceiveTimer->blockSignals(true);
-    if (canDeviceHandle != INVALID_DEVICE_HANDLE) {
-        ZCAN_CloseDevice(canDeviceHandle);
-        canDeviceHandle = INVALID_DEVICE_HANDLE;
-    }
+  int nCANIndex = ui->cbDevice->currentIndex();
+  canReceiveTimer->stop();
+  canReceiveTimer->blockSignals(true);
 
-    canOpenStatus = false;
-    ui->openCanButton->setText("打开CANFD设备");
-    ui->openCanButton->setStyleSheet(R"(
-           QPushButton {
-               background-color: white;
-               color: black;
-           }
-       )");
-    ui->statusLabel_1->setText("CAN已断开");
-    ui->startUpgradeButton->setEnabled(false);
-    ui->fileButton->setEnabled(true);
-    ui->viewButton->setEnabled(false);
 
-      ui->canPortBox->setEnabled(true);
-      ui->canBaudRateBox->setEnabled(true);
-      ui->canIdEdit->setEnabled(true);
+  if(nCANIndex == 1)  //chuanxin can
+  {
+      disconnect(m_CXCan, &ChuangXinCan::updateSendStatus, this, &Widget::updateSendSt);
+      disconnect(m_CXCan, &ChuangXinCan::recvedCANFDData, this, &Widget::recvCANFDData);
+      m_CXCan->closeCanDevice();
+      m_CXCan->stop();
+      m_CXCan->terminate();
+      m_CXCan->wait();
+      delete m_CXCan;
+      m_CXCan = nullptr;
+  }
+  else{ //zlg CAN
+    m_canBase->closeCanDevice();
+    disconnect(m_canBase, &canBase::updateSendStatus, this, &Widget::updateSendSt);
+    delete m_canBase;
+    m_canBase = nullptr;
+  }
+  canOpenStatus = false;
+  ui->openCanButton->setText("打开CANFD设备");
+  ui->openCanButton->setStyleSheet(R"(
+         QPushButton {
+             background-color: white;
+             color: black;
+         }
+     )");
+  ui->statusLabel_1->setText("CAN已断开");
+  ui->startUpgradeButton->setEnabled(false);
+  ui->fileButton->setEnabled(true);
+  ui->viewButton->setEnabled(false);
+
+  ui->cbDevice->setEnabled(true);
+  ui->canPortBox->setEnabled(true);
+  ui->canBaudRateBox->setEnabled(true);
+  ui->canIdEdit->setEnabled(true);
 }
 
 void Widget::on_openCanButton_clicked()
 {
-       if (canOpenStatus)
-       {
-           closeCanDevice();
-       }
-       else
-       {
-             if (ui->connectTabWidget->currentIndex() != 0)
-             {
-                 QMessageBox::warning(this, "提示", "请先切换到【CANFD通信】标签页，再打开CANFD设备！");
-                 return;
-             }
-                  if (OpenStatus)
-                  {
-                      QMessageBox::information(this, tr("CANFD连接失败"),
-                                             tr("串口设备已打开，请先关闭后再打开CANFD！"),
-                                             QMessageBox::Ok);
-                     return; // 直接返回，不执行后续打开逻辑
-                  }
-           if (openCanDevice())
-           {
-               ui->openCanButton->setText("关闭CANFD设备");
-               ui->openCanButton->setStyleSheet(R"(
-                   QPushButton {
-                       background-color: #4CAF50;
-                       color: white;
-                   }
-               )");
+  if (canOpenStatus)
+  {
+     closeCanDevice();
+  }
+  else
+  {
+    if (ui->connectTabWidget->currentIndex() != 0)
+    {
+       QMessageBox::warning(this, "提示", "请先切换到【CANFD通信】标签页，再打开CANFD设备！");
+       return;
+    }
+    if (OpenStatus)
+    {
+        QMessageBox::information(this, tr("CANFD连接失败"),
+                               tr("串口设备已打开，请先关闭后再打开CANFD！"),
+                               QMessageBox::Ok);
+       return; // 直接返回，不执行后续打开逻辑
+    }
+    if (openCanDevice())
+    {
+       ui->openCanButton->setText("关闭CANFD设备");
+       ui->openCanButton->setStyleSheet(R"(
+           QPushButton {
+               background-color: #4CAF50;
+               color: white;
            }
-       }
+       )");
+    }
+  }
 }
 
 void Widget::on_canIdEdit_editingFinished()
 {
-    if (canOpenStatus) {
-            QMessageBox::warning(this, tr("CAN警告"), tr("CAN设备已打开，无法修改ID！请先关闭设备。"));
-            ui->canIdEdit->setText(QString("0x%1").arg(canId, 8, 16, QChar('0')));
-            return;
-        }
+  if (canOpenStatus) {
+      QMessageBox::warning(this, tr("CAN警告"), tr("CAN设备已打开，无法修改ID！请先关闭设备。"));
+      ui->canIdEdit->setText(QString("0x%1").arg(canId, 8, 16, QChar('0')));
+      return;
+  }
 
-        QString input = ui->canIdEdit->text().trimmed();
-        int pos = 0;
-        if (ui->canIdEdit->validator()->validate(input, pos) != QValidator::Acceptable) {
-            QMessageBox::warning(this, tr("CAN警告"), tr("无效的十六进制格式！请输入如0x001或1的格式"));
-            ui->canIdEdit->setText(QString("0x%1").arg(canId, 8, 16, QChar('0')));
-            return;
-        }
+  QString input = ui->canIdEdit->text().trimmed();
+  int pos = 0;
+  if (ui->canIdEdit->validator()->validate(input, pos) != QValidator::Acceptable) {
+      QMessageBox::warning(this, tr("CAN警告"), tr("无效的十六进制格式！请输入如0x001或1的格式"));
+      ui->canIdEdit->setText(QString("0x%1").arg(canId, 8, 16, QChar('0')));
+      return;
+  }
 
-        bool ok = false;
-        quint32 newCanId = 0;
-        if (input.startsWith("0x", Qt::CaseInsensitive)) {
-            newCanId = input.mid(2).toUInt(&ok, 16);
-        } else {
-            newCanId = input.toUInt(&ok, 16);
-        }
+  bool ok = false;
+  quint32 newCanId = 0;
+  if (input.startsWith("0x", Qt::CaseInsensitive)) {
+      newCanId = input.mid(2).toUInt(&ok, 16);
+  } else {
+      newCanId = input.toUInt(&ok, 16);
+  }
 
-        if (ok && newCanId <= 0x000000FF) {
-            canId = newCanId;
-            QString displayText = QString("0x%1").arg(canId, 8, 16, QChar('0'));
-            ui->canIdEdit->setText(displayText);
-            updateStatus(tr("CAN扩展ID已更新为：%1").arg(displayText));
-            qDebug() << "CAN ID更新成功：" << displayText;
-        } else {
-            QMessageBox::warning(this, tr("CAN警告"), tr("无效的CAN ID！范围：0~0x000000FF"));
-            ui->canIdEdit->setText(QString("0x%1").arg(canId, 8, 16, QChar('0')));
-        }
+  if (ok && newCanId <= 0x000000FF) {
+    canId = newCanId;
+    QString displayText = QString("0x%1").arg(canId, 8, 16, QChar('0'));
+    ui->canIdEdit->setText(displayText);
+    updateStatus(tr("CAN扩展ID已更新为：%1").arg(displayText));
+    qDebug() << "CAN ID更新成功：" << displayText;
+  } else {
+      QMessageBox::warning(this, tr("CAN警告"), tr("无效的CAN ID！范围：0~0x000000FF"));
+      ui->canIdEdit->setText(QString("0x%1").arg(canId, 8, 16, QChar('0')));
+  }
 }
 
 void Widget::sendCanData(const QByteArray &data)
 {
+  int nCANIndex = ui->cbDevice->currentIndex();
   if (currentCommMode != CAN_MODE) {
       updateStatus("当前为非CAN模式，无法通过CAN发送");
       return;
   }
 
-  if (!canOpenStatus || canChannelHandle == INVALID_CHANNEL_HANDLE) {
-      updateStatus("CANFD未打开，发送失败");
-      return;
-  }
-
-  // CAN FD 单帧最大 64 字节
-      const int MAX_FD_DATA_LEN = 64;
-      int dataPos = 0;
-      int totalLen = data.size();
-      const int FRAME_INTERVAL = 2;
-
-      while (dataPos < totalLen) {
-        int currentFrameLen = qMin(MAX_FD_DATA_LEN, totalLen - dataPos);
-        QByteArray currentFrameData = data.mid(dataPos, currentFrameLen);
-
-        canfd_frame fdFrame;
-        memset(&fdFrame, 0, sizeof(canfd_frame));
-        fdFrame.can_id = MAKE_CAN_ID(canId, 0, 0, 0);
-        fdFrame.len = currentFrameLen;
-        fdFrame.flags = 0x00;
-
-        memcpy(fdFrame.data, currentFrameData.data(), currentFrameLen);
-
-        ZCAN_TransmitFD_Data txFdData;
-        memset(&txFdData, 0, sizeof(txFdData));
-        txFdData.frame = fdFrame;
-        txFdData.transmit_type = 0; // 0=正常发送
-
-        UINT sendCnt = ZCAN_TransmitFD(canChannelHandle, &txFdData, 1);
-        if (sendCnt > 0) {
-            QString timeStr = QDateTime::currentDateTime().toString("HH:mm:ss.zzz");
-            QString log = QString("%1 [CANFD TX] 数据:%2")
-                         .arg(timeStr).arg(QString(currentFrameData.toHex().toUpper()));
-            ui->sendTextEdit->append(log);
-            QThread::msleep(FRAME_INTERVAL);
-        } else {
-            updateStatus(QString("CANFD发送失败！%1").arg(getCanErrorInfo()));
-            break;
-        }
-        dataPos += currentFrameLen;
-    }
+  UINT ID = MAKE_CAN_ID(canId, 0, 0, 0);
+  if(nCANIndex == 0)  //zlg CAN
+    m_canBase->sendCanData(ID, data);
+  else  //chuangxin CAN
+    m_CXCan->sendCanData(ID, data);
 }
 
 void Widget::receiveCanData()
 {
-    if (!canOpenStatus || canChannelHandle == INVALID_CHANNEL_HANDLE)
+    m_canBase->receiveCanData(recvBuffer);
+    if(recvBuffer.size()> 0)
     {
-        canReceiveTimer->start();
-        return;
-    }
-
-    ZCAN_ReceiveFD_Data rxFdData[5];
-    UINT recvCnt = ZCAN_ReceiveFD(canChannelHandle, rxFdData, 5, 10);
-    //ZCAN_ReceiveFD_Data rxFdData[1];
-    //UINT recvCnt = ZCAN_ReceiveFD(canChannelHandle, rxFdData, 1, 1);
-    //qDebug() << "【接收轮询】本次读到帧数：" << recvCnt;
-
-    if (recvCnt > 0)
-    {
-        for (UINT i = 0; i < recvCnt; i++)
-        {
-            canfd_frame rxFrame = rxFdData[i].frame;
-            bool isExtFrame = (rxFrame.can_id & CAN_EFF_FLAG) != 0;
-            quint32 recvPureId = rxFrame.can_id & CAN_EFF_MASK;
-
-#ifdef QT_DEBUG
-            QString frameType = isExtFrame ? "ExtendFrm" : "StandardFrm";
-            qDebug() << "FrameTyp：" << frameType << "  OriginalID：0x" << QString::number(recvPureId, 16);
-#endif
-            // 只处理标准帧 + 匹配目标ID
-            if (!isExtFrame && recvPureId == canId)
-            {
-                QByteArray recvBuf(reinterpret_cast<const char*>(rxFrame.data), rxFrame.len);
-                recvBuffer.append(recvBuf);
-#ifdef QT_DEBUG
-                static QTime RecvTime = QTime::currentTime();
-                QString strTime = RecvTime.toString("mm:ss:zzz");
-                qDebug() << strTime << " " << recvBuf.toHex();
-#endif
-            }
-        }
         processRecvBuffer();
     }
+}
+
+void Widget::updateSendSt(UINT sendCnt, QByteArray currentFrameData)
+{
+  const int FRAME_INTERVAL = 2;
+  if (sendCnt > 0) {
+      QString timeStr = QDateTime::currentDateTime().toString("HH:mm:ss.zzz");
+      QString log = QString("%1 [CANFD TX] 数据:%2")
+                   .arg(timeStr).arg(QString(currentFrameData.toHex().toUpper()));
+      ui->sendTextEdit->append(log);
+      QThread::msleep(FRAME_INTERVAL);
+  } else {
+      updateStatus(QString("CANFD发送失败！%1").arg(getCanErrorInfo()));
+  }
+
+}
+
+void Widget::recvCANFDData(QByteArray recvCANFDData)
+{
+  if(recvCANFDData.size()>0)
+    {
+      if(recvCANFDData.isEmpty())
+          return;
+      qDebug()<<"[CAN raw frame]"<<recvCANFDData.toHex(' ');
+      recvBuffer.append(recvCANFDData);
+      processRecvBuffer();
+    }
+
 }
 
 // -------------------------- 串口操作 --------------------------
@@ -3460,118 +3418,8 @@ bool Widget::openFirmwareFile(const QString &fileName)
        firmwareFile = nullptr;
        return false;
    }
-  return true;
 
-
-    /*//old aes algorithm, split data block for decrypt(need mutiple of 16 bytes,max not beyond 240,cause data format limit on unsigned char)
-
-    //decrypt .bin file for download real data
-    //each encrypt block size 160 byte
-    int nBlockSize = 160;
-    quint64 uBinSize = binSize;
-    int nReadTimes = uBinSize/nBlockSize + 1;
-    char pBuff[nBlockSize];
-    aes_128_decrypt aes128Decrypt;
-
-    unsigned char sourceMsg[nBlockSize];
-    unsigned char decrypt_data[nBlockSize];
-
-    //get system temp path for save decrypted bin file
-    static QTime time = QTime::currentTime();
-    QString strDateTime = time.toString("hh_mm_ss");
-    QString tempDirPath = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    m_strNewPath =tempDirPath + "/" + strDateTime + ".bin";
-
-    QFile* binFile = new QFile(m_strNewPath);
-    if (!binFile->open(QIODevice::WriteOnly | QIODevice::Append)) {
-        QMessageBox::critical(this, tr("文件错误"),
-                             tr("无法打开固件文件：%1").arg(binFile->errorString()));
-        delete binFile;
-        binFile = nullptr;
-        return false;
-    }
-    m_binArr.clear();
-    aes128Decrypt.my_aes_init();
-    for(int i = 0; i< nReadTimes; i++)
-    {
-        memset(pBuff, 0, sizeof(pBuff));
-        fwFile->seek(i * nBlockSize);
-
-        if(i==nReadTimes - 1) //last package
-        {
-          nBlockSize = uBinSize % nBlockSize;
-          char pBuffs[nBlockSize];
-          unsigned char sourceMsgs[nBlockSize];
-          unsigned char decrypt_datas[nBlockSize];
-
-          fwFile->read(pBuffs, nBlockSize);
-
-          //be decrypt data
-          memset(decrypt_data, 0, nBlockSize);
-          memcpy(sourceMsgs, pBuffs, nBlockSize);
-
-          aes128Decrypt.PrintData("sourceMsg", sourceMsgs, nBlockSize);
-          aes128Decrypt.my_aes_decrypt(sourceMsgs, decrypt_datas, nBlockSize);
-
-          //save decrypted data
-          QByteArray baDecrypt;
-          baDecrypt.clear();
-          for(int i = 0; i< nBlockSize; i++)
-          {
-              baDecrypt.append(decrypt_datas[i]);
-              if(m_binArr.size()<1000)
-                m_binArr.append(decrypt_datas[i]);
-          }
-          binFile->write(baDecrypt , nBlockSize);
-        }
-        else
-        {
-          fwFile->read(pBuff, nBlockSize);
-
-          //be decrypt data
-          memset(decrypt_data, 0, nBlockSize);
-          memcpy(sourceMsg, pBuff, nBlockSize);
-
-          aes128Decrypt.PrintData("sourceMsg", sourceMsg, nBlockSize);
-          aes128Decrypt.my_aes_decrypt(sourceMsg, decrypt_data, nBlockSize);
-
-          //save decrypted data
-          QByteArray baDecrypt;
-          for(int i = 0; i< nBlockSize; i++)
-          {
-              baDecrypt.append(decrypt_data[i]);
-              if(m_binArr.size()<1000)
-                m_binArr.append(decrypt_data[i]);
-          }
-          binFile->write(baDecrypt , nBlockSize);
-        }
-
-    }
-    binFile->close();
-    delete binFile;
-    binFile = nullptr;
-
-    fwFile->close();
-    delete fwFile;
-    fwFile = nullptr;
-
-    //open decrypt .bin file for...
-    firmwareFile = new QFile(m_strNewPath);
-    if (!firmwareFile->open(QIODevice::ReadOnly)) {
-        QMessageBox::critical(this, tr("文件错误"),
-                             tr("无法打开固件文件：%1").arg(firmwareFile->errorString()));
-        delete firmwareFile;
-        firmwareFile = nullptr;
-        return false;
-    }
-    binSize = firmwareFile->size();
-    if (binSize == 0) {
-        QMessageBox::warning(this, tr("文件警告"), tr("所选固件文件为空！"));
-        return false;
-    }
-
-    */
-
+   return true;
 }
 
 void Widget::on_viewButton_clicked()
@@ -3811,9 +3659,86 @@ void Widget::processRecvBuffer()
         {
             if(cmdId == CMD_COMBINED_DATA)//曲线绘制
             {
-                //if(m_PauseCapture)
-                    DrawRealTimeCurve(cmdId, action, fullPacket, dataLen);
-                return;
+                DrawRealTimeCurve(cmdId, action, fullPacket, dataLen);
+                continue;
+            }
+            else if (cmdId != CMD_COMBINED_DATA)
+            { //非合并包才打印
+                QString timeStr = QDateTime::currentDateTime().toString("HH:mm:ss.zzz");
+                QString dataHex = fullPacket.toHex().toUpper();
+                QString rxFlag;
+                // 根据当前通信模式选择RX标识
+                if (currentCommMode == CAN_MODE) {
+                    rxFlag = "[CAN RX]";
+                } else if (currentCommMode == SERIAL_MODE) {
+                    rxFlag = "[Serial RX]";
+                } else {
+                    rxFlag = "[Unknown RX]"; // 异常模式容错
+                }
+
+                QString log = QString("%1 %2 数据:%3\n").arg(timeStr).arg(rxFlag).arg(dataHex);
+                ui->receiveTextEdit->append(log);
+
+                processResponse(cmdId, action, index, fullPacket, dataLen);
+            }
+        }
+        else
+        {
+            // 解析失败，重试逻辑
+            retryCount++;
+            if (retryCount >= 2) {
+                updateStatus("多次解析失败，操作终止");
+                upgradeState = STATE_ERROR;
+                timer->stop();
+                ui->startUpgradeButton->setEnabled(true);
+                ui->cancelButton->setEnabled(false);
+                retryCount = 0;
+            } else {
+                switch (upgradeState) {
+                case STATE_SILENCE: sendSilenceCommand(true); break;
+                case STATE_PREPARING: sendPrepareCommand(); break;
+                case STATE_SENDING_DATA: sendNextPacket(); break;
+                default: break;
+                }
+            }
+        }
+    }
+}
+
+void Widget::processRecvBuffer2()
+{
+    if (recvBuffer.size() > 4096) {
+        updateStatus("接收缓存溢出，清空无效数据");
+        recvBuffer.clear();
+        return;
+    }
+
+    while (recvBuffer.size() >= 8) //最小应用层数据包长度（AA55头+6字节固定字段+1字节校验）
+    {
+        int headerIdx = recvBuffer.indexOf(QByteArray::fromHex("AA55"));
+        if (headerIdx < 0) {
+            recvBuffer.clear();//无帧头，清空无效数据
+            break;
+        } else if (headerIdx > 0) {
+            recvBuffer.remove(0, headerIdx);
+            continue;
+        }
+        // 解析数据包长度（数据长度字段在第5-6字节，大端）
+        quint16 dataLen = (static_cast<quint8>(recvBuffer[5]) << 8) | static_cast<quint8>(recvBuffer[6]);
+        quint16 fullPacketLen = 7 + dataLen + 1;// 7字节固定头 + 数据长度 + 1字节校验
+        if (recvBuffer.size() < fullPacketLen) {
+            break;//数据不完整，等待后续帧
+        }
+
+        QByteArray fullPacket = recvBuffer.left(fullPacketLen);
+        recvBuffer.remove(0, fullPacketLen);
+        quint8 cmdId = 0, action = 0, index = 0;
+        if (parseResponse(fullPacket, cmdId, action, index, dataLen))
+        {
+            if(cmdId == CMD_COMBINED_DATA)//曲线绘制
+            {
+                DrawRealTimeCurve(cmdId, action, fullPacket, dataLen);
+                continue;
             }
             else if (cmdId != CMD_COMBINED_DATA)
             { //非合并包才打印
@@ -3949,25 +3874,18 @@ bool Widget::DrawRealTimeCurve(quint8 cmdId, quint8 action, const QByteArray &fu
 
 void Widget::processResponse(quint8 cmdId, quint8 action, quint8 index, const QByteArray &fullPacket, quint16 dataLen)
 {
-    //debug
-    //qDebug() <<"receive CANFD message::0x" << QString::number(cmdId, 16);
-    //_
-/*
-    //  主动上报指令（仅CMD_COMBINED_DATA=0x20）：跳过ID校验，直接处理
-    bool isActiveReport =(cmdId == CMD_COMBINED_DATA) || (cmdId == CMD_RESULT);
-    //  主动发送指令：必须校验“响应ID == 最后发送ID”，否则忽略
+//    //  主动上报指令（仅CMD_COMBINED_DATA=0x20）：跳过ID校验，直接处理
+//    bool isActiveReport =(cmdId == CMD_COMBINED_DATA) || (cmdId == CMD_RESULT);
+//    //  主动发送指令：必须校验“响应ID == 最后发送ID”，否则忽略
+//    if (!isActiveReport)
+//    {
+//        if (cmdId != lastSentCmdId) {
+//            qDebug() << "[Response ID mismatch] send0x" << QString::number(lastSentCmdId, 16)
+//                     << "，receive0x" << QString::number(cmdId, 16) << "→ this response be ignored.";
+//            return;
+//        }
+//    }
 
-    if (!isActiveReport)
-    {
-        if (cmdId != lastSentCmdId) {
-            //qDebug() << "[响应ID不匹配] 发送0x" << QString::number(lastSentCmdId, 16)
-            //         << "，接收0x" << QString::number(cmdId, 16) << "→ 忽略该响应";
-            qDebug() << "[Response ID mismatch] send0x" << QString::number(lastSentCmdId, 16)
-                     << "，receive0x" << QString::number(cmdId, 16) << "→ this response be ignored.";
-            return;
-        }
-    }
-*/
 
     timer->stop();
     retryCount = 0;
@@ -4532,22 +4450,22 @@ void Widget::processResponse(quint8 cmdId, quint8 action, quint8 index, const QB
         lastSentCmdId = 0;
         break;
 
-//                case CMD_READ_CTRL_PARAM:
-//                    if (action == ACTION_SUCCESS) {
-//                        QByteArray payload = fullPacket.mid(7, dataLen);
-//                        if (parseMitParams(payload)) {
-//                            ui->statusLabel_3->setText("控制参数读取成功");
-//                            updateStatus("控制参数读取成功");
-//                        } else {
-//                            ui->statusLabel_3->setText("控制参数解析失败");
-//                            updateStatus("控制参数解析失败");
-//                        }
-//                    } else {
-//                        ui->statusLabel_3->setText("控制参数读取失败");
-//                        updateStatus(QString("控制参数读取失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
-//                    }
-//                    lastSentCmdId = 0;
-                    break;
+//  case CMD_READ_CTRL_PARAM:
+//      if (action == ACTION_SUCCESS) {
+//          QByteArray payload = fullPacket.mid(7, dataLen);
+//          if (parseMitParams(payload)) {
+//              ui->statusLabel_3->setText("控制参数读取成功");
+//              updateStatus("控制参数读取成功");
+//          } else {
+//              ui->statusLabel_3->setText("控制参数解析失败");
+//              updateStatus("控制参数解析失败");
+//          }
+//      } else {
+//          ui->statusLabel_3->setText("控制参数读取失败");
+//          updateStatus(QString("控制参数读取失败，响应码0x%1").arg(action, 2, 16, QChar('0')));
+//      }
+//      lastSentCmdId = 0;
+      break;
 
     case CMD_SET_POS:
     if (action == ACTION_SUCCESS) {
@@ -4912,7 +4830,7 @@ void Widget::processRealTimeData(const QByteArray &payload)
 #ifdef QT_DEBUG
         key /= 1000.0f;
         m_ProxyPlot->DrawingCurve(true);
-        m_ProxyPlot->slotCanFdRecv(key, currentPos, currentSpeed*0.104719755, currentPhaseCurrent, currentMosTem, currentMosTem);
+        m_ProxyPlot->slotCanFdRecv(key, currentPos, currentSpeed*0.104719755, currentPhaseCurrent, currentMotorTem, currentMosTem);
 
 #else
         m_plotwidget->appendData(CURRENTPOS, key, currentPos);

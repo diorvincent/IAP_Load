@@ -7,7 +7,7 @@
 修改内容：
   添加GfMultBy03,GfMultBy09,GfMultBy0B,GfMultBy0D,GfMultBy0E函数，
   修改MixColumns函数
-  解决对bin文件解密时数据块大小限制(原函数由于数据块异或逻辑，数据类型原因只能对16bytes的整数倍(最大240bytes)进行解密)
+  解决解密后的明文末尾多余出若干0x00问题
 时间：20260805
 */
 

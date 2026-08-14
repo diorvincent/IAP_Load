@@ -128,15 +128,21 @@ void PlotWidget::exportToCsv(const QString &fileName)
     QVector<QString> headers;
     QVector<QVector<QPointF>> data;
 
-    for (const auto &cd : m_curves) {
-        headers.append(cd.name);
-        data.append(cd.buffer->getData());
-    }
+    QVector<QPointF> vec = m_curves[PHASECURRENT].buffer->getData();
+    if(vec.size() >0)
+      {
+        for (const auto &cd : m_curves) {
+            headers.append(cd.name);
+            data.append(cd.buffer->getData());
+        }
 
-    if(CsvExporter::exportToFile(fileName, headers, data))
-        QMessageBox::information(this, "提示", "测试数据保存成功！");
+        if(CsvExporter::exportToFile(fileName, headers, data))
+            QMessageBox::information(this, "提示", "测试数据保存成功！");
+        else
+            QMessageBox::warning(this, "提示", "保存测试数据失败！");
+      }
     else
-        QMessageBox::warning(this, "提示", "保存测试数据失败！");
+      QMessageBox::information(this, "提示", "无测试数据！");
 }
 
 bool PlotWidget::saveScreenshot(const QString &fileName)
@@ -232,27 +238,27 @@ void PlotWidget::drawCurves(QPainter &painter)
         // 设置画笔+可见判断
         if(cd.name == CURRENTPOS && m_cd.bPosVisable)
         {
-            painter.setPen(QPen(Qt::red, 1));
+            painter.setPen(QPen(Qt::red, 2));
             visible = true;
         }
         else if (cd.name == RPMS && m_cd.bRPMVisable)
         {
-            painter.setPen(QPen(Qt::magenta, 1));
+            painter.setPen(QPen(Qt::magenta, 2));
             visible = true;
         }
         else if (cd.name == PHASECURRENT && m_cd.bCurrentVisable)
         {
-            painter.setPen(QPen(Qt::green, 1));
+            painter.setPen(QPen(Qt::green, 2));
             visible = true;
         }
         else if (cd.name == MOTORTEMP && m_cd.bMotorTempVisable)
         {
-            painter.setPen(QPen(Qt::yellow, 1));
+            painter.setPen(QPen(Qt::blue, 2));//蓝色
             visible = true;
         }
         else if (cd.name == MOSTEMP && m_cd.bDrvTempVisable)
         {
-            painter.setPen(QPen(Qt::gray, 1));
+            painter.setPen(QPen(Qt::black, 2));//黑色
             visible = true;
         }
         if(!visible) continue;

@@ -20,15 +20,19 @@
 #include "qcustomplot.h"
 #include "proxyplot.h"
 #include "aes_128_decrypt.h"
+#include "canbase.h"
+#include "zlgcan_s.h"
+#include "chuangxincan.h"
 
 // 周立功CAN库头文件
 #include "typedef.h"
-#include "canframe.h"
 #include "config.h"
 #include "zlgcan.h"
+#include "canframe.h"
 #include <QThread>
 #include <cstdint>
 #include <cmath>
+#include <string.h>
 
 #include <QWidget>
 #include <QDoubleSpinBox>
@@ -54,6 +58,9 @@
 class QSerialPort;
 class QTimer;
 class ZLGCAN;
+class canBase;
+class ChuangXinCan;
+class ZLGCan_s;
 
 
 class DoubleSlider : public QSlider
@@ -275,6 +282,8 @@ private slots:
     void receiveCanData();
     void on_canIdEdit_editingFinished();
 
+    void updateSendSt(UINT sendCnt, QByteArray currentFrameData);
+    void recvCANFDData(QByteArray recvCANFDData);
 
     void on_fileButton_clicked();
     void on_viewButton_clicked();
@@ -285,20 +294,18 @@ private slots:
     void on_readHwVersionBtn_clicked();
     void on_readSwVersionBtn_clicked();
 
-
     void on_clearVersionBtn_clicked();
     void on_clearUpgradeLogBtn_clicked();
 
     void on_commModeChanged();
-     void on_zero_customContextMenuRequested();
-       void closeSerialDevice();
-
+    void on_zero_customContextMenuRequested();
+    void closeSerialDevice();
 
     void on_calibModeBtn_clicked();          // 标定模式切换
     void on_elecAngleZeroBtn_clicked();       // 电角度零位校准
     void on_mechLimitBtn_clicked();          // 机械限位校准
-//    void on_readElecLimitBtn_clicked();      // 电子限位读取
-//    void on_readEncoderBtn_clicked();        // 编码器数据读取
+//  void on_readElecLimitBtn_clicked();      // 电子限位读取
+//  void on_readEncoderBtn_clicked();        // 编码器数据读取
     void handleCalibTimeout();               // 标定操作超时处理
 
 
@@ -401,6 +408,12 @@ private:
     //20260724 //内部调试还是发行版本 (发行版本需要屏蔽部分控件信息)
     void Publish_or_Debug_Ver();
     //_
+
+    //20260812+ 创芯CAN适配器
+    canBase* m_canBase;
+    ChuangXinCan* m_CXCan;
+    //_
+
 
     bool hybridPageInitialized = false;
     // 串口相关
@@ -578,6 +591,7 @@ private:
     bool openFirmwareFile(const QString &fileName);
     QByteArray readFirmwareData(qint64 offset, qint64 maxSize);
     void processRecvBuffer();
+    void processRecvBuffer2();
     QByteArray buildPacket(quint8 index, quint8 cmdId, quint8 action, const QByteArray &payload);
     quint8 calculateChecksum(const QByteArray &data);
     bool parseResponse(const QByteArray &data, quint8 &cmdId, quint8 &action, quint8 &index, quint16 &length);

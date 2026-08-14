@@ -221,7 +221,7 @@ QProgressBar::chunk{
       <enum>QTabWidget::Triangular</enum>
      </property>
      <property name="currentIndex">
-      <number>4</number>
+      <number>0</number>
      </property>
      <property name="movable">
       <bool>false</bool>
@@ -249,7 +249,7 @@ QProgressBar::chunk{
          <x>30</x>
          <y>10</y>
          <width>641</width>
-         <height>351</height>
+         <height>451</height>
         </rect>
        </property>
        <property name="minimumSize">
@@ -276,8 +276,8 @@ QProgressBar::chunk{
           <rect>
            <x>50</x>
            <y>10</y>
-           <width>221</width>
-           <height>291</height>
+           <width>261</width>
+           <height>391</height>
           </rect>
          </property>
          <property name="title">
@@ -287,7 +287,7 @@ QProgressBar::chunk{
           <property name="geometry">
            <rect>
             <x>0</x>
-            <y>90</y>
+            <y>150</y>
             <width>221</width>
             <height>61</height>
            </rect>
@@ -295,6 +295,12 @@ QProgressBar::chunk{
           <layout class="QHBoxLayout" name="horizontalLayout_4">
            <item>
             <widget class="QLabel" name="labCanPort">
+             <property name="maximumSize">
+              <size>
+               <width>50</width>
+               <height>16777215</height>
+              </size>
+             </property>
              <property name="text">
               <string>端口：</string>
              </property>
@@ -326,7 +332,7 @@ QProgressBar::chunk{
           <property name="geometry">
            <rect>
             <x>0</x>
-            <y>160</y>
+            <y>220</y>
             <width>221</width>
             <height>61</height>
            </rect>
@@ -334,6 +340,12 @@ QProgressBar::chunk{
           <layout class="QHBoxLayout" name="horizontalLayout_5">
            <item>
             <widget class="QLabel" name="labCanBaud">
+             <property name="maximumSize">
+              <size>
+               <width>50</width>
+               <height>16777215</height>
+              </size>
+             </property>
              <property name="text">
               <string>速率：</string>
              </property>
@@ -403,7 +415,7 @@ QProgressBar::chunk{
           <property name="geometry">
            <rect>
             <x>0</x>
-            <y>30</y>
+            <y>90</y>
             <width>221</width>
             <height>61</height>
            </rect>
@@ -411,6 +423,12 @@ QProgressBar::chunk{
           <layout class="QHBoxLayout" name="horizontalLayout_6">
            <item>
             <widget class="QLabel" name="labCanId">
+             <property name="maximumSize">
+              <size>
+               <width>50</width>
+               <height>16777215</height>
+              </size>
+             </property>
              <property name="text">
               <string>ID：</string>
              </property>
@@ -424,8 +442,8 @@ QProgressBar::chunk{
          <widget class="QPushButton" name="openCanButton">
           <property name="geometry">
            <rect>
-            <x>10</x>
-            <y>240</y>
+            <x>100</x>
+            <y>310</y>
             <width>121</width>
             <height>31</height>
            </rect>
@@ -440,6 +458,38 @@ QProgressBar::chunk{
           <property name="text">
            <string>打开CANFD</string>
           </property>
+         </widget>
+         <widget class="QWidget" name="horizontalLayoutWidget_39">
+          <property name="geometry">
+           <rect>
+            <x>0</x>
+            <y>29</y>
+            <width>221</width>
+            <height>61</height>
+           </rect>
+          </property>
+          <layout class="QHBoxLayout" name="horizontalLayout_50">
+           <item>
+            <widget class="QLabel" name="label_6">
+             <property name="maximumSize">
+              <size>
+               <width>50</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;设备：&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="cbDevice">
+             <property name="styleSheet">
+              <string notr="true">background-color: rgb(255, 255, 255); /* 白色背景，可替换为其他颜色 */</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
          </widget>
         </widget>
        </widget>
@@ -881,7 +931,7 @@ QProgressBar::chunk{
        <property name="geometry">
         <rect>
          <x>30</x>
-         <y>380</y>
+         <y>480</y>
          <width>91</width>
          <height>41</height>
         </rect>

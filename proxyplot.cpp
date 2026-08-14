@@ -76,7 +76,7 @@ void proxyPlot::initQCP()
     connect(m_customPlot->xAxis, SIGNAL(rangeChanged(QCPRange)), m_customPlot->xAxis2, SLOT(setRange(QCPRange)));
     connect(m_customPlot->yAxis, SIGNAL(rangeChanged(QCPRange)), m_customPlot->yAxis2, SLOT(setRange(QCPRange)));
 
-    setPlotTheme(Qt::white, Qt::black);
+    setPlotTheme(Qt::black, Qt::white);
 
     //关闭自带滚轮缩放，仅开启拖拽、坐标轴选中
     m_customPlot->setInteractions(QCP::iRangeDrag | QCP::iSelectAxes);
@@ -93,8 +93,8 @@ void proxyPlot::initQCP()
     initGraphName("CURRENTPOS", 0, Qt::red);
     initGraphName("RPMS", 1, Qt::magenta);
     initGraphName("PHASECURRENT", 2, Qt::green, true);
-    initGraphName("MOTORTEMP", 3, Qt::yellow);
-    initGraphName("MOSTEMP", 4, Qt::blue);
+    initGraphName("MOTORTEMP", 3, Qt::blue);
+    initGraphName("MOSTEMP", 4, Qt::black);
 
     /*
     //初始化游标
@@ -149,7 +149,7 @@ void proxyPlot::initGraphName(QString name, int index, QColor color, bool bVisab
 {
     m_customPlot->addGraph();
     //int curIdx = m_customPlot->graphCount()-1;
-    m_customPlot->graph(index)->setPen(QPen(color));
+    m_customPlot->graph(index)->setPen(QPen(color, 2));
     m_customPlot->graph(index)->setVisible(bVisable);
     m_nameToGraphMap[name] = index;
 }
@@ -157,6 +157,7 @@ void proxyPlot::initGraphName(QString name, int index, QColor color, bool bVisab
 void proxyPlot::setGrapVisable(int nIndex, bool bVisable)
 {
   m_customPlot->graph(nIndex)->setVisible(bVisable);
+  m_customPlot->replot();
 }
 
 void proxyPlot::setGrapYRange(double B, double T)
